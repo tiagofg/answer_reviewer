@@ -30,7 +30,9 @@ reviewer = autogen.AssistantAgent(
         "You must evaluate two main aspects: whether the answer is semantically correct and whether the answer is contextually correct. "
         "Along with the question and the answer, context will be provided that must be taken into account for the evaluation. "
         "You must provide a score from 0 to 5 for each aspect, and the final score will be the sum of the two scores. "
+        "For each score, you must put the number of the score followed by a slash and the total possible score. "
         "If the final score is 7 or less, you must present the points that are incorrect and suggest what should be done to improve the answer. "
+        "The sugestions must be in the end of the message, after the text 'Suggestions:'. "
         "If the final score is higher than 7, you don't need to provide any suggestions. "
         "You must not provide a revised answer, the user will make the necessary corrections and return the corrected answer for evaluation. "
     )
