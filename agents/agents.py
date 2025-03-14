@@ -26,7 +26,7 @@ reviewer = autogen.AssistantAgent(
         "1. Compatibility: the user asks if the product is compatible with another product. "
         "2. Specification: the user asks about the product's specifications. "
         "3. Availability: the user asks about the product's availability. "
-        "The questions and answers may be in Portuguese or Spanish; when reviewing the answer, you must consider the original language of the question. "
+        "The questions and answers may be in Portuguese or Spanish, but your scores and suggestions must be in English. "
         "You must evaluate two main aspects: whether the answer is semantically correct and whether the answer is contextually correct. "
         "Along with the question and the answer, context will be provided that must be taken into account for the evaluation. "
         "You must provide a score from 0 to 5 for each aspect, and the final score will be the sum of the two scores. "

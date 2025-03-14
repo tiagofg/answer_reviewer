@@ -1,4 +1,5 @@
 import os
+import csv
 import json
 from typing import List
 from models.revision import RevisionRequest
@@ -6,7 +7,7 @@ from agents.agents import reviewer, user_proxy  # Import the necessary agents
 
 
 class RevisionService:
-    def __init__(self, results_file: str = "results.json"):
+    def __init__(self, results_file: str = "results.csv"):
         self.results_file = results_file
 
     def process_revision(self, request: RevisionRequest) -> str:
@@ -14,11 +15,18 @@ class RevisionService:
         Processes a single revision request.
         Returns the final revised answer.
         """
+        # Extract the language and intent from the request
+        language = "portuguese" if request.locale == "pt" else "spanish"
+        intent = request.intent.get("name")
+
         # Build the JSON with the question fields
         question_data = {
             "question": request.question,
             "answer": request.answer,
-            "context": request.context
+            "context": request.context,
+            "category": request.category,
+            "language": language,
+            "intent": intent,
         }
 
         formatted_question = json.dumps(
@@ -40,7 +48,7 @@ class RevisionService:
         # Define the 'revised_answer' field based on the rules
         revised_answer = self.determine_revised_answer(
             request.answer, final_answer)
-        
+
         new_score = new_score if new_score is not None else "-"
         previous_score = previous_score if previous_score is not None else score
 
@@ -49,10 +57,14 @@ class RevisionService:
             "Question": request.question,
             "Original Answer": request.answer,
             "Original Score": previous_score,
+            "Original Feedback": request.feedback,
             "Suggestions": suggestions,
             "Revised Answer": revised_answer,
             "Final Score": new_score,
-            "Total Cost": cost_str
+            "Total Cost": cost_str,
+            "Language": language,
+            "Intent": request.intent.get("name"),
+            "Category": request.category,
         }
 
         self.save_result(new_record)
@@ -129,19 +141,22 @@ class RevisionService:
 
     def save_result(self, record):
         """
-        Reads existing records (if any) and adds the new record,
-        saving everything to the results file.
+        Reads existing records (if any) and adds a new record,
+        saving everything to the CSV file.
         """
-        if os.path.exists(self.results_file):
-            with open(self.results_file, "r", encoding="utf-8") as f:
-                try:
-                    data = json.load(f)
-                except Exception:
-                    data = []
-        else:
-            data = []
+        # Check if the file exists and if it is empty
+        file_exists = os.path.exists(self.results_file)
+        is_empty = not file_exists or os.stat(self.results_file).st_size == 0
 
-        data.append(record)
+        # Open the file in append mode
+        with open(self.results_file, "a", newline="", encoding="utf-8") as f:
+            # Use the keys of the record as CSV field names
+            fieldnames = list(record.keys())
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
 
-        with open(self.results_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+            # If the file does not exist or is empty, write the header row
+            if is_empty:
+                writer.writeheader()
+
+            # Write the new record to the CSV file
+            writer.writerow(record)

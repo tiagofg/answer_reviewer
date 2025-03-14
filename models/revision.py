@@ -1,8 +1,14 @@
 from pydantic import BaseModel
-from typing import Dict, Any
+from typing import Dict, Any, List
 
-# Input model: expects a JSON with the fields "question", "answer", and "context"
 class RevisionRequest(BaseModel):
+    id: int
     question: str
     answer: str
+    correct: bool
+    feedback: str | None
+    locale: str
+    intent: Dict[str, Any]
     context: Dict[str, Any]
+    metadata: List[Any]
+    category: str
