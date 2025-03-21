@@ -22,9 +22,7 @@ revision_service = RevisionService()
 @app.post("/revise")
 def revise_question(request: RevisionRequest):
     try:
-        response = revision_service.process_revision(request)
-
-        return {"response": response}
+        return revision_service.process_revision(request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

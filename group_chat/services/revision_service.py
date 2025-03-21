@@ -1,9 +1,9 @@
 import os
 import csv
 import json
+import re
 from typing import List
 
-import autogen
 from models.revision import RevisionRequest
 from agents.agents import manager, user_proxy  # Import the necessary agents
 
@@ -38,23 +38,24 @@ class RevisionService:
 
         result = user_proxy.initiate_chat(recipient=manager, message=message)
 
-        # # Extract relevant information from the chat history
-        # final_answer, score, previous_score, new_score, suggestions = self.extract_chat_results(
-        #     result, request.answer)
+        # Extract total cost, if available
+        total_cost = result.cost.get(
+            'usage_excluding_cached_inference', {}).get('total_cost')
+        cost_str = f"${total_cost}" if total_cost is not None else "Cost information not available"
 
-        # # Extract total cost, if available
-        # total_cost = result.cost.get(
-        #     'usage_excluding_cached_inference', {}).get('total_cost')
-        # cost_str = f"${total_cost}" if total_cost is not None else "Cost information not available"
+        # Extract relevant information from the chat history
+        final_answer, revised_answer, previous_score, new_score, suggestions = self.extract_chat_results(
+            manager.chat_messages, request.answer)
 
-        # # Define the 'revised_answer' field based on the rules
-        # revised_answer = self.determine_revised_answer(
-        #     request.answer, final_answer)
+        if (new_score is not None) and (new_score <= 7):
+            final_answer = "DO_NOT_ANSWER"
 
-        # new_score = new_score if new_score is not None else "-"
-        # previous_score = previous_score if previous_score is not None else score
+        if (previous_score is not None) and (previous_score > 7):
+            final_answer = request.answer
 
-        # # Build the record to save the results
+        new_score = new_score if new_score is not None else "-"
+
+        # Build the record to save the results
         # new_record = {
         #     "Question": request.question,
         #     "Original Answer": request.answer,
@@ -63,7 +64,6 @@ class RevisionService:
         #     "Suggestions": suggestions,
         #     "Revised Answer": revised_answer,
         #     "Final Score": new_score,
-        #     "Total Cost": cost_str,
         #     "Language": language,
         #     "Intent": request.intent.get("name"),
         #     "Category": request.category,
@@ -71,7 +71,14 @@ class RevisionService:
 
         # self.save_result(new_record)
 
-        # return final_answer.strip()
+        return {
+            "final_answer": final_answer,
+            "previous_score": previous_score,
+            "new_score": new_score,
+            "suggestions": suggestions,
+            "revised_answer": revised_answer,
+            "total_cost": cost_str,
+        }
 
     def process_revisions(self, requests: List[RevisionRequest]) -> List[str]:
         """
@@ -86,60 +93,82 @@ class RevisionService:
         return responses
 
     @staticmethod
-    def extract_chat_results(result, original_answer):
+    def extract_chat_results(messages, original_answer):
         """
-        Extracts relevant information from the chat history.
-        Returns: final_answer, score, previous_score, new_score, suggestions.
+        Extrai informações relevantes do histórico do chat.
+        Retorna: final_answer, previous_score, new_score, suggestions.
         """
         final_answer = original_answer
-        score = None
+        revised_answer = None
         previous_score = None
         new_score = None
         suggestions = None
 
-        if hasattr(result, "chat_history") and isinstance(result.chat_history, list):
-            for msg in reversed(result.chat_history):
-                content = msg.get("content", "")
+        # Se 'messages' for um dicionário (por exemplo, defaultdict) com listas de mensagens,
+        # "achata" a estrutura em uma única lista
+        if isinstance(messages, dict):
+            flat_messages = []
 
-                # Process the revised answer sent by "User"
-                if msg.get("role") == "assistant" and msg.get("name") == "User":
-                    if "Revised Answer:" in content and final_answer == original_answer:
-                        final_answer = content.split("Revised Answer:")[
-                            1].strip().replace('"', '')
-                    elif "It is not possible to provide a revised answer." in content:
-                        final_answer = "It is not possible to provide a revised answer."
+            for msg_list in messages.values():
+                flat_messages.extend(msg_list)
 
-                # Process the information from the "Reviewer"
-                elif msg.get("name") == "Reviewer":
-                    if "Final Score" in content:
-                        score_value = int(content.split(
-                            "Final Score: ")[1].split("/")[0])
+            messages = flat_messages
 
-                        if score is None:
-                            score = score_value
-                        else:
-                            new_score = score
-                            previous_score = score_value
+        index = 0
+        for msg in reversed(messages):
+            if index >= 3:
+                break
 
-                    if "Suggestions:" in content and suggestions is None:
-                        suggestions = content.split("Suggestions:")[1].strip()
+            # Se 'msg' for um dicionário, extrai o conteúdo; caso contrário, usa 'msg' como string
+            content = msg.get("content", "") if isinstance(
+                msg, dict) else str(msg)
 
-        return final_answer, score, previous_score, new_score, suggestions
+            # Expressões regulares para extrair os conteúdos desejados
+            final_answer_match = re.search(
+                r"<final_answer>(.*?)</final_answer>", content, re.DOTALL)
 
-    @staticmethod
-    def determine_revised_answer(original, revised):
-        """
-        Defines the 'Revised Answer' field based on the logic:
-          - If the revised answer is equal to the original, return "-"
-          - If it is not possible to revise, return None (null in JSON)
-          - Otherwise, return the revised answer.
-        """
-        if revised == original:
-            return "-"
-        elif revised == "It is not possible to provide a revised answer.":
-            return None
+            revised_answer_match = re.search(
+                r"<revised_answer>(.*?)</revised_answer>", content, re.DOTALL)
 
-        return revised
+            previous_score_match = re.search(
+                r"<total_score>(.*?)</total_score>", content)
+
+            new_score_match = re.search(
+                r"<new_score>(.*?)</new_score>", content)
+
+            suggestions_match = re.search(
+                r"<suggestions>(.*?)</suggestions>", content, re.DOTALL)
+
+            if final_answer_match:
+                final_answer = final_answer_match.group(1).strip()
+
+            if revised_answer_match:
+                revised_answer = revised_answer_match.group(1).strip()
+
+            if previous_score_match:
+                try:
+                    previous_score = int(previous_score_match.group(1).strip())
+                except ValueError:
+                    previous_score = None
+
+            if new_score_match:
+                try:
+                    new_score = int(new_score_match.group(1).strip())
+                except ValueError:
+                    new_score = None
+
+            if suggestions_match:
+                suggestions = suggestions_match.group(1).strip()
+
+            if content.find("THIS QUESTION CANNOT BE ANSWERED!!") >= 0:
+                final_answer = "DO_NOT_ANSWER"
+
+            if (previous_score is not None and new_score is not None) or (previous_score is not None and previous_score > 7):
+                break
+
+            index += 1
+
+        return final_answer, revised_answer, previous_score, new_score, suggestions
 
     def save_result(self, record):
         """

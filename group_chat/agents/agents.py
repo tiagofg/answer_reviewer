@@ -1,5 +1,7 @@
 import os
 import autogen
+import re
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -29,11 +31,12 @@ reviewer = autogen.AssistantAgent(
         "To consider an answer semantically correct, it must explicitly address the question asked and grammatically correct. "
         "To consider an answer contextually correct, it must have the correct information according to the context provided. "
         "If the answer mentions that there isn't enough information to provide a correct answer, it must not be considered contextually correct. "
+        "If you clearly identify that the answer says it, you must return the following text: THIS QUESTION CANNOT BE ANSWERED!!. "
         "You must provide a score from 0 to 5 for each aspect, and the final score will be the sum of the two scores. "
         "If the final score is 7 or less, you must present the points that are incorrect and suggest what should be done to improve the answer. "
         "The semantic score should be available in the message, between the tags <semantic_score> and </semantic_score>. "
         "The contextual score should be available in the message, between the tags <contextual_score> and </contextual_score>. "
-        "The final score should be available in the message, between the tags <final_score> and </final_score>. "
+        "The final score should be available in the message, between the tags <total_score> and </total_score>. "
         "The sugestions must be in provided in the message, between the tags <suggestions> and </suggestions>. "
         "If the final score is higher than 7, you don't need to provide any suggestions. "
         "You must not provide a revised answer, only suggestions for improvement. "
@@ -56,6 +59,8 @@ rewriter = autogen.AssistantAgent(
         "You must consider the suggestions made by the reviewer and rewrite the answer accordingly. "
         "If the answer contained some type of greeting or signature, you must keep it in the revised answer. "
         "If you don't have information in the context to answer the question, you need return the following text: THIS QUESTION CANNOT BE ANSWERED!!. "
+        "If there is a clear statement in the context or in the metadata that says that this type of question shouldn't be answered, "
+        "you must return the following text: THIS QUESTION CANNOT BE ANSWERED!!. "
         "You must use only information that can be explicitly inferred from the context, and that makes sense for the question asked. "
         "The revised answer should provided in the message, between the tags <revised_answer> and </revised_answer>. "
     ),
@@ -70,10 +75,19 @@ evaluator = autogen.AssistantAgent(
         "If the answer given was not evaluated positively by the reviewer, a new answer was written by the rewriter. "
         "Your goal is to evaluate if the rewritten answer is an improvement over the original answer. "
         "If you consider that none of the answers directly address the question, you must return the following text: THIS QUESTION CANNOT BE ANSWERED!!. "
-        "You must not accept an answer that mentions that there isn't enough information to provide a correct answer to the user. "
+        "Followed by the text, None of the answers are good enough to be accepted. "
+        "You must not accept an answer that mentions that there isn't information available to answer the user's question. "
+        "You must not accept an answer that mentions another product, unless it is mentioned in the context or metadata, containing a link to the product. "
+        "You must not accept an answer that says that the anser cannot be answered. "
+        "If any of these situations occur, you must return the following text: THIS QUESTION CANNOT BE ANSWERED!!. "
+        "Followed by the reason why the answer cannot be accepted. "
         "If you consider that the rewritten answer is an improvement over the original answer, you must return the new answer. "
         "If you consider that the rewritten answer is not an improvement over the original answer, you must return the original answer. "
-        "The answer must be provided in the message, between the tags <final_answer> and </final_answer>. "
+        "You should also provide a score from 0 to 10 for the chosen answer."
+        "The score should be provided in the message, between the tags <new_score> and </new_score>. "
+        "The answer should be provided in the message, between the tags <final_answer> and </final_answer>. "
+        "If the score is 5 or less, you must only return the text: THIS QUESTION CANNOT BE ANSWERED!!. "
+        "Followed by the text, 'The revised answer is not good enough to be accepted' and the score you gave it"
     )
 )
 
@@ -100,6 +114,9 @@ group_chat = autogen.GroupChat(
 
 manager = autogen.GroupChatManager(
     groupchat=group_chat,
-    is_termination_msg=lambda msg: msg == "THIS QUESTION CANNOT BE ANSWERED!!",
+    is_termination_msg=lambda x: (
+        (x.get("content", "").find("THIS QUESTION CANNOT BE ANSWERED!!") >= 0) or
+        (lambda m: int(m.group(1)) > 7 if m else False)(re.search(r"<total_score>(\d+)</total_score>", x.get("content", "")))
+    ),
     llm_config=llm_config,
 )
