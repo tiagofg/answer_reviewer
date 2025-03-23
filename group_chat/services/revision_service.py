@@ -55,29 +55,29 @@ class RevisionService:
 
         new_score = new_score if new_score is not None else "-"
 
-        # Build the record to save the results
-        # new_record = {
-        #     "Question": request.question,
-        #     "Original Answer": request.answer,
-        #     "Original Score": previous_score,
-        #     "Original Feedback": request.feedback,
-        #     "Suggestions": suggestions,
-        #     "Revised Answer": revised_answer,
-        #     "Final Score": new_score,
-        #     "Language": language,
-        #     "Intent": request.intent.get("name"),
-        #     "Category": request.category,
-        # }
+        final_answer = final_answer if final_answer != "DO_NOT_ANSWER" else "-"
 
-        # self.save_result(new_record)
+        # Build the record to save the results
+        new_record = {
+            "Question": request.question,
+            "Original Answer": request.answer,
+            "Original Score": previous_score,
+            "Original Feedback": request.feedback,
+            "Suggestions": suggestions,
+            "Revised Answer": revised_answer,
+            "Final Score": new_score,
+            "Final Answer": final_answer,
+            "Language": language,
+            "Intent": request.intent.get("name"),
+            "Category": request.category,
+        }
+
+        self.save_result(new_record)
 
         return {
             "final_answer": final_answer,
             "previous_score": previous_score,
             "new_score": new_score,
-            "suggestions": suggestions,
-            "revised_answer": revised_answer,
-            "total_cost": cost_str,
         }
 
     def process_revisions(self, requests: List[RevisionRequest]) -> List[str]:
