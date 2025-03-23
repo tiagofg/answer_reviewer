@@ -110,6 +110,7 @@ user_proxy = autogen.UserProxyAgent(
 
 group_chat = autogen.GroupChat(
     agents=[reviewer, rewriter, evaluator],
+    speaker_selection_method="round_robin",
 )
 
 manager = autogen.GroupChatManager(
@@ -119,4 +120,12 @@ manager = autogen.GroupChatManager(
         (lambda m: int(m.group(1)) > 7 if m else False)(re.search(r"<total_score>(\d+)</total_score>", x.get("content", "")))
     ),
     llm_config=llm_config,
+    system_message=(
+        "You are the manager of a group chat that contains three AI assistants: the reviewer, the rewriter, and the evaluator. "
+        "The reviewer evaluates the quality of an answer provided for a question asked by the user regarding a product. "
+        "The rewriter rewrites answers that have not been evaluated positively by the reviewer. "
+        "The evaluator evaluates if the rewritten answer is an improvement over the original answer. "
+        "You must manage the conversation between the assistants and make sure that the final answer is provided to the user. "
+        "Each assistant must speak only once in the conversation, and they must speak in the following order: reviewer, rewriter, evaluator. "
+    )
 )
