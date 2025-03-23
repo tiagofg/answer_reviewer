@@ -10,5 +10,5 @@ class RevisionRequest(BaseModel):
     locale: str
     intent: Dict[str, Any]
     context: Dict[str, Any]
-    metadata: List[Any]
+    # metadata: List[Any]
     category: str

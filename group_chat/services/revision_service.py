@@ -27,7 +27,6 @@ class RevisionService:
             "answer": request.answer,
             "context": request.context,
             "category": request.category,
-            "metadata": request.metadata,
             "language": language,
             "intent": intent,
         }
@@ -63,6 +62,7 @@ class RevisionService:
             "Original Answer": request.answer,
             "Original Score": previous_score,
             "Original Feedback": request.feedback,
+            "Correct": request.correct,
             "Suggestions": suggestions,
             "Revised Answer": revised_answer,
             "Final Score": new_score,

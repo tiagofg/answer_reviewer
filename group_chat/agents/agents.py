@@ -9,8 +9,9 @@ load_dotenv()
 # LLM model configuration
 config_list = [
     {
-        "model": "gpt-4o",
-        "api_key": os.getenv("OPEN_AI_API_KEY"),
+        "model": "llama3-70b-8192",
+        "api_key": os.getenv("GROQ_API_KEY"),
+        "api_type": "groq",
         "temperature": 0,
     }
 ]
@@ -24,7 +25,7 @@ reviewer = autogen.AssistantAgent(
     system_message=(
         "You are an AI assistant whose purpose is to review the quality of an answer provided for a question asked to the user regarding a product. "
         "This question may have different intents, the closest match to question will be provided along with the question and the answer. "
-        "You will also receive a metadata containing some informations and rules for the answer, that should be taken into account. "
+        # "You will also receive a metadata containing some informations and rules for the answer, that should be taken into account. "
         "Another important information is the category, it describes the category of the product related to the question. "
         "The questions and answers may be in Portuguese or Spanish, but your scores and suggestions must be in English. "
         "You must evaluate two main aspects: whether the answer is semantically correct and whether the answer is contextually correct. "
@@ -50,16 +51,17 @@ rewriter = autogen.AssistantAgent(
     system_message=(
         "You are an AI assistant whose purpose is to rewrite answers that have not been evaluated positively by the reviewer. "
         "You will receive the original question, the original answer, and the suggestions for improvement made by the reviewer. "
-        "Other important informations that you should use to rewrite the answer are the context, the category, the intent and the metadata. "
+        # "Other important informations that you should use to rewrite the answer are the context, the category, the intent and the metadata. "
+        "Other important informations that you should use to rewrite the answer are the context, the category and the intent. "
         "The context is a object that contains the information about the product, the store and other useful informations. "
         "The category is a string that describes the category of the product related to the question. "
         "The intent is a object that contains the possible intents of the question, calculated based on the question. "
-        "The metadata is a object that contains some informations and rules for the answer, that should be taken into account. "
+        # "The metadata is a object that contains some informations and rules for the answer, that should be taken into account. "
         "The questions and answers may be in Portuguese or Spanish, but your revised answer must be in the original language of the question. "
         "You must consider the suggestions made by the reviewer and rewrite the answer accordingly. "
         "If the answer contained some type of greeting or signature, you must keep it in the revised answer. "
         "If you don't have information in the context to answer the question, you need return the following text: THIS QUESTION CANNOT BE ANSWERED!!. "
-        "If there is a clear statement in the context or in the metadata that says that this type of question shouldn't be answered, "
+        "If there is a clear statement in the context that says that this type of question shouldn't be answered, "
         "you must return the following text: THIS QUESTION CANNOT BE ANSWERED!!. "
         "You must use only information that can be explicitly inferred from the context, and that makes sense for the question asked. "
         "The revised answer should provided in the message, between the tags <revised_answer> and </revised_answer>. "
@@ -77,7 +79,7 @@ evaluator = autogen.AssistantAgent(
         "If you consider that none of the answers directly address the question, you must return the following text: THIS QUESTION CANNOT BE ANSWERED!!. "
         "Followed by the text, None of the answers are good enough to be accepted. "
         "You must not accept an answer that mentions that there isn't information available to answer the user's question. "
-        "You must not accept an answer that mentions another product, unless it is mentioned in the context or metadata, containing a link to the product. "
+        "You must not accept an answer that mentions another product, unless it is mentioned in the context, containing a link to the product. "
         "You must not accept an answer that says that the anser cannot be answered. "
         "If any of these situations occur, you must return the following text: THIS QUESTION CANNOT BE ANSWERED!!. "
         "Followed by the reason why the answer cannot be accepted. "
@@ -99,7 +101,7 @@ user_proxy = autogen.UserProxyAgent(
     human_input_mode="NEVER",
     system_message=(
         "You must send a answer given for a question asked by a costumer regarding a product for evaluation. "
-        "The object that you will send contains the question, the answer, the context, the category, the metadata, the language and the intent. "
+        "The object that you will send contains the question, the answer, the context, the category, the language and the intent. "
         "This question needs to be evaluated by the reviewer, and if necessary, revised by the rewriter. "
         "The revised answer must be evaluated by the evaluator. "
     ),
@@ -110,6 +112,7 @@ user_proxy = autogen.UserProxyAgent(
 
 group_chat = autogen.GroupChat(
     agents=[reviewer, rewriter, evaluator],
+    speaker_selection_method="round_robin",
 )
 
 manager = autogen.GroupChatManager(
@@ -119,4 +122,12 @@ manager = autogen.GroupChatManager(
         (lambda m: int(m.group(1)) > 7 if m else False)(re.search(r"<total_score>(\d+)</total_score>", x.get("content", "")))
     ),
     llm_config=llm_config,
+    system_message=(
+        "You are the manager of a group chat that contains three AI assistants: the reviewer, the rewriter, and the evaluator. "
+        "The reviewer evaluates the quality of an answer provided for a question asked by the user regarding a product. "
+        "The rewriter rewrites answers that have not been evaluated positively by the reviewer. "
+        "The evaluator evaluates if the rewritten answer is an improvement over the original answer. "
+        "You must manage the conversation between the assistants and make sure that the final answer is provided to the user. "
+        "Each assistant must speak only once in the conversation, and they must speak in the following order: reviewer, rewriter, evaluator. "
+    )
 )
