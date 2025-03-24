@@ -6,102 +6,106 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# LLM model configuration
+# Configuração do modelo LLM
 config_list = [
     {
-        "model": "gpt-4o",
-        "api_key": os.getenv("OPEN_AI_API_KEY"),
+        "model": "sabia-3",
+        "base_url": "https://chat.maritaca.ai/api",
+        "api_key": os.getenv("SABIA_API_KEY"),
         "temperature": 0,
     }
 ]
 llm_config = {"config_list": config_list}
 
-# Reviewer Agent: evaluates the answer and suggests improvements (does not provide the final answer).
+# Agente Revisor: avalia a resposta e sugere melhorias (não fornece a resposta final).
 reviewer = autogen.AssistantAgent(
     name="Reviewer",
     llm_config=llm_config,
     max_consecutive_auto_reply=1,
     system_message=(
-        "You are an AI assistant whose purpose is to review the quality of an answer provided for a question asked to the user regarding a product. "
-        "This question may have different intents, the closest match to question will be provided along with the question and the answer. "
-        "You will also receive a metadata containing some informations and rules for the answer, that should be taken into account. "
-        "Another important information is the category, it describes the category of the product related to the question. "
-        "The questions and answers may be in Portuguese or Spanish, but your scores and suggestions must be in English. "
-        "You must evaluate two main aspects: whether the answer is semantically correct and whether the answer is contextually correct. "
-        "To consider an answer semantically correct, it must explicitly address the question asked and grammatically correct. "
-        "To consider an answer contextually correct, it must have the correct information according to the context provided. "
-        "If the answer mentions that there isn't enough information to provide a correct answer, it must not be considered contextually correct. "
-        "If you clearly identify that the answer says it, you must return the following text: THIS QUESTION CANNOT BE ANSWERED!!. "
-        "You must provide a score from 0 to 5 for each aspect, and the final score will be the sum of the two scores. "
-        "If the final score is 7 or less, you must present the points that are incorrect and suggest what should be done to improve the answer. "
-        "The semantic score should be available in the message, between the tags <semantic_score> and </semantic_score>. "
-        "The contextual score should be available in the message, between the tags <contextual_score> and </contextual_score>. "
-        "The final score should be available in the message, between the tags <total_score> and </total_score>. "
-        "The sugestions must be in provided in the message, between the tags <suggestions> and </suggestions>. "
-        "If the final score is higher than 7, you don't need to provide any suggestions. "
-        "You must not provide a revised answer, only suggestions for improvement. "
+        "Você é um assistente de IA cujo propósito é revisar a qualidade de uma resposta fornecida para uma pergunta feita a respeito de um produto. "
+        "Esta pergunta pode ter intenções diferentes, sendo fornecida a que mais se aproxima da pergunta juntamente com a própria pergunta e a resposta. "
+        "Você também receberá um metadado contendo algumas informações e regras para a resposta, que devem ser consideradas. "
+        "Outra informação importante é a categoria, que descreve a categoria do produto relacionado à pergunta. "
+        "As perguntas e respostas podem estar em português ou espanhol, mas suas pontuações e sugestões devem estar em inglês. "
+        "Você deve avaliar dois aspectos principais: se a resposta está semanticamente correta e se está contextualmente correta. "
+        "Para considerar uma resposta semanticamente correta, ela deve abordar explicitamente a pergunta feita e estar gramaticalmente correta. "
+        "Para considerá-la contextualmente correta, ela deve conter as informações corretas de acordo com o contexto ou os metadados fornecidos. "
+        "Você deve fornecer uma pontuação de 0 a 5 para cada aspecto, e a pontuação final será a soma das duas pontuações. "
+        "Se a resposta mencionar que não há informações suficientes para fornecer uma resposta correta, ela não deve ser considerada contextualmente correta. "
+        "Portanto, uma pergunta que contenha informações faltantes ou incorretas não deve receber uma pontuação 4 ou 5 na parte contextual. "
+        "Se a pontuação final for 7 ou menor, você deve apresentar os pontos incorretos e sugerir o que deve ser feito para melhorar a resposta. "
+        "A pontuação semântica deve estar disponível na mensagem, entre as tags <semantic_score> e </semantic_score>. "
+        "A pontuação contextual deve estar disponível na mensagem, entre as tags <contextual_score> e </contextual_score>. "
+        "A pontuação final deve estar disponível na mensagem, entre as tags <total_score> e </total_score>. "
+        "As sugestões devem ser fornecidas na mensagem, entre as tags <suggestions> e </suggestions>. "
+        "Se a pontuação final for superior a 7, você não precisa fornecer nenhuma sugestão. "
+        "Você não deve fornecer uma resposta revisada, apenas sugestões para melhoria. "
     )
 )
 
+# Agente Reescritor: reescreve respostas que não foram avaliadas positivamente pelo revisor.
 rewriter = autogen.AssistantAgent(
     name="Rewriter",
     llm_config=llm_config,
     max_consecutive_auto_reply=1,
     system_message=(
-        "You are an AI assistant whose purpose is to rewrite answers that have not been evaluated positively by the reviewer. "
-        "You will receive the original question, the original answer, and the suggestions for improvement made by the reviewer. "
-        "Other important informations that you should use to rewrite the answer are the context, the category, the intent and the metadata. "
-        "The context is a object that contains the information about the product, the store and other useful informations. "
-        "The category is a string that describes the category of the product related to the question. "
-        "The intent is a object that contains the possible intents of the question, calculated based on the question. "
-        "The metadata is a object that contains some informations and rules for the answer, that should be taken into account. "
-        "The questions and answers may be in Portuguese or Spanish, but your revised answer must be in the original language of the question. "
-        "You must consider the suggestions made by the reviewer and rewrite the answer accordingly. "
-        "If the answer contained some type of greeting or signature, you must keep it in the revised answer. "
-        "If you don't have information in the context to answer the question, you need return the following text: THIS QUESTION CANNOT BE ANSWERED!!. "
-        "If there is a clear statement in the context or in the metadata that says that this type of question shouldn't be answered, "
-        "you must return the following text: THIS QUESTION CANNOT BE ANSWERED!!. "
-        "You must use only information that can be explicitly inferred from the context, and that makes sense for the question asked. "
-        "The revised answer should provided in the message, between the tags <revised_answer> and </revised_answer>. "
+        "Você é um assistente de IA cujo propósito é reescrever respostas que não foram avaliadas positivamente pelo revisor. "
+        "Você receberá a pergunta original, a resposta original e as sugestões de melhoria feitas pelo revisor. "
+        "Outras informações importantes que você deve usar para reescrever a resposta são o contexto, a categoria, a intenção e os metadados. "
+        "O contexto é um objeto que contém informações sobre o produto, a loja e outras informações úteis. "
+        "A categoria é uma string que descreve a categoria do produto relacionado à pergunta. "
+        "A intenção é um objeto que contém as intenções possíveis da pergunta, calculadas com base na própria pergunta. "
+        "Os metadados são um objeto que contém algumas informações e regras para a resposta, que devem ser consideradas. "
+        "As perguntas e respostas podem estar em português ou espanhol, mas sua resposta revisada deve estar no idioma original da pergunta. "
+        "Você deve considerar as sugestões feitas pelo revisor e reescrever a resposta de acordo. "
+        "Se a resposta contiver algum tipo de saudação ou assinatura, você deve mantê-la na resposta revisada. "
+        "Se você não tiver informações no contexto para responder à pergunta, deve retornar o seguinte texto: THIS QUESTION CANNOT BE ANSWERED!!. "
+        "Se houver uma declaração clara no contexto ou nos metadados que indique que este tipo de pergunta não deve ser respondida, "
+        "você deve retornar o seguinte texto: THIS QUESTION CANNOT BE ANSWERED!!. "
+        "Você deve usar apenas informações que possam ser explicitamente inferidas a partir do contexto e que façam sentido para a pergunta feita. "
+        "A resposta revisada deve ser fornecida na mensagem, entre as tags <revised_answer> e </revised_answer>. "
     ),
 )
 
+# Agente Avaliador: avalia uma resposta dada para uma pergunta feita por um cliente sobre um produto.
+# Se a resposta fornecida não for avaliada positivamente pelo revisor, uma nova resposta será escrita pelo reescritor.
 evaluator = autogen.AssistantAgent(
     name="Evaluator",
     llm_config=llm_config,
     max_consecutive_auto_reply=1,
     system_message=(
-        "You are an AI assistant whose purpose is to evaluate an answer given for a question asked by a costumer regarding a product. "
-        "If the answer given was not evaluated positively by the reviewer, a new answer was written by the rewriter. "
-        "Your goal is to evaluate if the rewritten answer is an improvement over the original answer. "
-        "If you consider that none of the answers directly address the question, you must return the following text: THIS QUESTION CANNOT BE ANSWERED!!. "
-        "Followed by the text, None of the answers are good enough to be accepted. "
-        "You must not accept an answer that mentions that there isn't information available to answer the user's question. "
-        "You must not accept an answer that mentions another product, unless it is mentioned in the context or metadata, containing a link to the product. "
-        "You must not accept an answer that says that the anser cannot be answered. "
-        "If any of these situations occur, you must return the following text: THIS QUESTION CANNOT BE ANSWERED!!. "
-        "Followed by the reason why the answer cannot be accepted. "
-        "If you consider that the rewritten answer is an improvement over the original answer, you must return the new answer. "
-        "If you consider that the rewritten answer is not an improvement over the original answer, you must return the original answer. "
-        "You should also provide a score from 0 to 10 for the chosen answer."
-        "The score should be provided in the message, between the tags <new_score> and </new_score>. "
-        "The answer should be provided in the message, between the tags <final_answer> and </final_answer>. "
-        "If the score is 5 or less, you must only return the text: THIS QUESTION CANNOT BE ANSWERED!!. "
-        "Followed by the text, 'The revised answer is not good enough to be accepted' and the score you gave it"
+        "Você é um assistente de IA cujo propósito é avaliar uma resposta dada para uma pergunta feita por um cliente sobre um produto. "
+        "Se a resposta fornecida não foi avaliada positivamente pelo revisor, uma nova resposta foi escrita pelo reescritor. "
+        "Seu objetivo é avaliar se a resposta reescrita é uma melhoria em relação à resposta original. "
+        "Se você considerar que nenhuma das respostas aborda diretamente a pergunta, deve retornar o seguinte texto: THIS QUESTION CANNOT BE ANSWERED!!. "
+        "Seguido pelo texto, None of the answers are good enough to be accepted. "
+        "Você não deve aceitar uma resposta que mencione que não há informações disponíveis para responder à pergunta do usuário. "
+        "Você não deve aceitar uma resposta que mencione outro produto, a menos que este seja mencionado no contexto ou nos metadados, contendo um link para o produto. "
+        "Você não deve aceitar uma resposta que diga que a resposta não pode ser dada. "
+        "Se qualquer uma dessas situações ocorrer, você deve retornar o seguinte texto: THIS QUESTION CANNOT BE ANSWERED!!. "
+        "Seguido pelo motivo pelo qual a resposta não pode ser aceita. "
+        "Se você considerar que a resposta reescrita é uma melhoria em relação à resposta original, deve retornar a nova resposta. "
+        "Se considerar que a resposta reescrita não é uma melhoria em relação à resposta original, deve retornar a resposta original. "
+        "Você também deve fornecer uma pontuação de 0 a 10 para a resposta escolhida. "
+        "A pontuação deve ser fornecida na mensagem, entre as tags <new_score> e </new_score>. "
+        "A resposta deve ser fornecida na mensagem, entre as tags <final_answer> e </final_answer>. "
+        "Se a pontuação for 5 ou menor, você deve retornar apenas o texto: THIS QUESTION CANNOT BE ANSWERED!!. "
+        "Seguido pelo texto, 'The revised answer is not good enough to be accepted' e a pontuação que você atribuiu."
     )
 )
 
-# User Agent: sends the question for evaluation and, if necessary, revises the answer according to the reviewer's suggestions.
-# The final answer (original or revised) must be provided by user_proxy.
+# Agente Usuário: envia a resposta dada para uma pergunta feita por um cliente sobre um produto para avaliação.
+# A resposta final (original ou revisada) deve ser fornecida pelo user_proxy.
 user_proxy = autogen.UserProxyAgent(
     name="User",
     llm_config=llm_config,
     human_input_mode="NEVER",
     system_message=(
-        "You must send a answer given for a question asked by a costumer regarding a product for evaluation. "
-        "The object that you will send contains the question, the answer, the context, the category, the metadata, the language and the intent. "
-        "This question needs to be evaluated by the reviewer, and if necessary, revised by the rewriter. "
-        "The revised answer must be evaluated by the evaluator. "
+        "Você deve enviar uma resposta dada para uma pergunta feita por um cliente sobre um produto para avaliação. "
+        "O objeto que você enviará contém a pergunta, a resposta, o contexto, a categoria, os metadados, o idioma e a intenção. "
+        "Esta pergunta precisa ser avaliada pelo revisor e, se necessário, revisada pelo reescritor. "
+        "A resposta revisada deve ser avaliada pelo avaliador. "
     ),
     code_execution_config={
         "use_docker": False,
@@ -121,11 +125,11 @@ manager = autogen.GroupChatManager(
     ),
     llm_config=llm_config,
     system_message=(
-        "You are the manager of a group chat that contains three AI assistants: the reviewer, the rewriter, and the evaluator. "
-        "The reviewer evaluates the quality of an answer provided for a question asked by the user regarding a product. "
-        "The rewriter rewrites answers that have not been evaluated positively by the reviewer. "
-        "The evaluator evaluates if the rewritten answer is an improvement over the original answer. "
-        "You must manage the conversation between the assistants and make sure that the final answer is provided to the user. "
-        "Each assistant must speak only once in the conversation, and they must speak in the following order: reviewer, rewriter, evaluator. "
+        "Você é o gerente de um grupo de chat que contém três assistentes de IA: o revisor, o reescritor e o avaliador. "
+        "O revisor avalia a qualidade de uma resposta fornecida para uma pergunta feita pelo usuário sobre um produto. "
+        "O reescritor reescreve respostas que não foram avaliadas positivamente pelo revisor. "
+        "O avaliador avalia se a resposta reescrita é uma melhoria em relação à resposta original. "
+        "Você deve gerenciar a conversa entre os assistentes e garantir que a resposta final seja fornecida ao usuário. "
+        "Cada assistente deve falar apenas uma vez na conversa, e eles devem falar na seguinte ordem: revisor, reescritor, avaliador. "
     )
 )

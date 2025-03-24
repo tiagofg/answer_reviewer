@@ -4,42 +4,44 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# LLM model configuration
+# Configuração do modelo LLM
 config_list = [
     {
-        "model": "gpt-4o",
-        "api_key": os.getenv("OPEN_AI_API_KEY"),
+        "model": "sabia-3",
+        "base_url": "https://chat.maritaca.ai/api",
+        "api_key": os.getenv("SABIA_API_KEY"),
         "temperature": 0,
     }
 ]
 llm_config = {"config_list": config_list}
 
-# Reviewer Agent: evaluates the answer and suggests improvements (does not provide the final answer).
+# Agente Revisor: avalia a resposta e sugere melhorias (não fornece a resposta final).
 reviewer = autogen.AssistantAgent(
     name="Reviewer",
     llm_config=llm_config,
     max_consecutive_auto_reply=2,
     is_termination_msg=lambda msg: "It is not possible to provide a revised answer." in msg.get("content", ""),
     system_message=(
-        "You are an AI assistant whose purpose is to review the quality of an answer provided "
-        "for a question asked to the user regarding a product. This question can have 3 different intentions: "
-        "1. Compatibility: the user asks if the product is compatible with another product. "
-        "2. Specification: the user asks about the product's specifications. "
-        "3. Availability: the user asks about the product's availability. "
-        "The questions and answers may be in Portuguese or Spanish, but your scores and suggestions must be in English. "
-        "You must evaluate two main aspects: whether the answer is semantically correct and whether the answer is contextually correct. "
-        "Along with the question and the answer, context will be provided that must be taken into account for the evaluation. "
-        "You must provide a score from 0 to 5 for each aspect, and the final score will be the sum of the two scores. "
-        "For each score, you must put the number of the score followed by a slash and the total possible score. "
-        "If the final score is 7 or less, you must present the points that are incorrect and suggest what should be done to improve the answer. "
-        "The sugestions must be in the end of the message, after the text 'Suggestions:'. "
-        "If the final score is higher than 7, you don't need to provide any suggestions. "
-        "You must not provide a revised answer, the user will make the necessary corrections and return the corrected answer for evaluation. "
+        "Você é um assistente de IA cujo propósito é revisar a qualidade de uma resposta fornecida "
+        "para uma pergunta feita ao usuário sobre um produto. Esta pergunta pode ter 3 intenções diferentes: "
+        "1. Compatibilidade: o usuário pergunta se o produto é compatível com outro produto. "
+        "2. Especificação: o usuário pergunta sobre as especificações do produto. "
+        "3. Disponibilidade: o usuário pergunta sobre a disponibilidade do produto. "
+        "As perguntas e respostas podem estar em português ou espanhol, mas suas pontuações e sugestões devem estar em inglês. "
+        "Você deve avaliar dois aspectos principais: se a resposta está semanticamente correta e se está contextualmente correta. "
+        "Junto com a pergunta e a resposta, será fornecido um contexto que deve ser considerado para a avaliação. "
+        "Você deve fornecer uma pontuação de 0 a 5 para cada aspecto, e a pontuação final será a soma das duas pontuações. "
+        "Para cada pontuação, você deve colocar o número da pontuação seguido de uma barra e da pontuação máxima possível. "
+        "A nota para resposta deve estar logo após o texto 'Final Score:', onde você deve apresentar a pontuação seguido de /10. "
+        "Se a pontuação final for 7 ou menor, você deve apresentar os pontos incorretos e sugerir o que deve ser feito para melhorar a resposta. "
+        "As sugestões devem estar no final da mensagem, após o texto 'Suggestions:'. "
+        "Se a pontuação final for superior a 7, você não precisa fornecer sugestões. "
+        "Você não deve fornecer uma resposta revisada, o usuário fará as correções necessárias e retornará a resposta corrigida para avaliação. "
     )
 )
 
-# User Agent: sends the question for evaluation and, if necessary, revises the answer according to the reviewer's suggestions.
-# The final answer (original or revised) must be provided by user_proxy.
+# Agente Usuário: envia a pergunta para avaliação e, se necessário, revisa a resposta de acordo com as sugestões do revisor.
+# A resposta final (original ou revisada) deve ser fornecida por user_proxy.
 user_proxy = autogen.UserProxyAgent(
     name="User",
     llm_config=llm_config,
@@ -49,18 +51,18 @@ user_proxy = autogen.UserProxyAgent(
         msg.get("content", "").split("Final Score: ")[1].split("/")[0]
     ) > 7,
     system_message=(
-        "You must send a set of questions and answers to be evaluated by an AI assistant. "
-        "Each question can have 3 different intentions: "
-        "1. Compatibility: the user asks if the product is compatible with another product. "
-        "2. Specification: the user asks about the product's specifications. "
-        "3. Availability: the user asks about the product's availability. "
-        "The questions and answers may be in Portuguese or Spanish; when rewriting the answer, you must consider the original language of the question. "
-        "If the final score provided by the reviewer is less than 6, the it will present the points that are incorrect and suggest what should be done to improve the answer. "
-        "You must make the suggested corrections and return the corrected answer to be evaluated again. "
-        "Immediately after the text 'Revised Answer:', you must provide the corrected answer. This should be the end of the message. "
-        "If you believe that, given the context, it is not possible to provide a correct answer, you must return the following text: "
+        "Você deve enviar um conjunto de perguntas e respostas para serem avaliadas por um assistente de IA. "
+        "Cada pergunta pode ter 3 intenções diferentes: "
+        "1. Compatibilidade: o usuário pergunta se o produto é compatível com outro produto. "
+        "2. Especificação: o usuário pergunta sobre as especificações do produto. "
+        "3. Disponibilidade: o usuário pergunta sobre a disponibilidade do produto. "
+        "As perguntas e respostas podem estar em português ou espanhol; ao reescrever a resposta, você deve considerar o idioma original da pergunta. "
+        "Se a pontuação final fornecida pelo revisor for inferior a 6, ele apresentará os pontos incorretos e sugerirá o que deve ser feito para melhorar a resposta. "
+        "Você deve fazer as correções sugeridas e retornar a resposta corrigida para ser avaliada novamente. "
+        "Imediatamente após o texto 'Revised Answer:', você deve fornecer a resposta corrigida. Isso deve ser o final da mensagem. "
+        "Se você acreditar que, dado o contexto, não é possível fornecer uma resposta correta, você deve retornar o seguinte texto: "
         "'It is not possible to provide a revised answer.' "
-        "If the answer contained some type of greeting or signature, you must keep it in the revised answer. "
+        "Se a resposta contiver algum tipo de saudação ou assinatura, você deve mantê-la na resposta revisada. "
     ),
     code_execution_config={
         "use_docker": False,
