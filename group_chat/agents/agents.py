@@ -29,16 +29,16 @@ reviewer = autogen.AssistantAgent(
         "The questions and answers may be in Portuguese or Spanish, but your scores and suggestions must be in English. "
         "You must evaluate two main aspects: whether the answer is semantically correct and whether the answer is contextually correct. "
         "To consider an answer semantically correct, it must explicitly address the question asked and grammatically correct. "
-        "To consider an answer contextually correct, it must have the correct information according to the context provided. "
-        "If the answer mentions that there isn't enough information to provide a correct answer, it must not be considered contextually correct. "
-        "If you clearly identify that the answer says it, you must return the following text: THIS QUESTION CANNOT BE ANSWERED!!. "
+        "To consider an answer contextually correct, it must have the correct information according to the context or metadata provided. "
         "You must provide a score from 0 to 5 for each aspect, and the final score will be the sum of the two scores. "
-        "If the final score is 7 or less, you must present the points that are incorrect and suggest what should be done to improve the answer. "
+        "If the answer mentions that there isn't enough information to provide a correct answer, it must not be considered contextually correct. "
+        "So a question that has missing or incorrect information should not get a score 4 or 5 for the contextual score. "
+        "If the final score is 8 or less, you must present the points that are incorrect and suggest what should be done to improve the answer. "
         "The semantic score should be available in the message, between the tags <semantic_score> and </semantic_score>. "
         "The contextual score should be available in the message, between the tags <contextual_score> and </contextual_score>. "
         "The final score should be available in the message, between the tags <total_score> and </total_score>. "
         "The sugestions must be in provided in the message, between the tags <suggestions> and </suggestions>. "
-        "If the final score is higher than 7, you don't need to provide any suggestions. "
+        "If the final score is higher than 8, you don't need to provide any suggestions. "
         "You must not provide a revised answer, only suggestions for improvement. "
     )
 )
@@ -117,7 +117,7 @@ manager = autogen.GroupChatManager(
     groupchat=group_chat,
     is_termination_msg=lambda x: (
         (x.get("content", "").find("THIS QUESTION CANNOT BE ANSWERED!!") >= 0) or
-        (lambda m: int(m.group(1)) > 7 if m else False)(re.search(r"<total_score>(\d+)</total_score>", x.get("content", "")))
+        (lambda m: int(m.group(1)) > 8 if m else False)(re.search(r"<total_score>(\d+)</total_score>", x.get("content", "")))
     ),
     llm_config=llm_config,
     system_message=(
