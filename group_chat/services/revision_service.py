@@ -61,6 +61,7 @@ class RevisionService:
         new_record = {
             "Question": request.question,
             "Original Answer": request.answer,
+            # "Correct": request.correct,
             "Original Score": previous_score,
             "Original Feedback": request.feedback,
             "Suggestions": suggestions,
