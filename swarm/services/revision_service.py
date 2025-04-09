@@ -32,6 +32,7 @@ class RevisionService:
             "metadata": request.metadata,
             "language": language,
             "intent": intent,
+            "original_answer": request.answer,
         }
 
         formatted_question = json.dumps(
@@ -45,10 +46,9 @@ class RevisionService:
             messages=[
                 {
                     "role": "user",
-                    "content": f"Please evaluate this question\n{formatted_question}",
+                    "content": f"Please ask the agents to evaluated the answer from the context_variables, you should the necessary information to all of them. Here is the question: {formatted_question}",
                 }
             ],
-            max_rounds=15,
         )
 
         print(context_variables)
