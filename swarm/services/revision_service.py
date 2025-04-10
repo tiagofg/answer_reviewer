@@ -1,32 +1,30 @@
 import os
 import csv
 import json
-import re
+
 from typing import List
 
-from autogen import initiate_swarm_chat
+from autogen import AfterWorkOption, initiate_swarm_chat
 
 from models.revision import RevisionRequest
-from agents.agents import semantic_reviewer, contextual_reviewer, suggester, rewriter, user_proxy  # Import the necessary agents
+# Import the necessary agents
+from agents.agents import semantic_reviewer, contextual_reviewer, suggester, rewriter, user_proxy
 
+context_variables = dict()  # Variável global para armazenar os context variables
 
 class RevisionService:
     def __init__(self, results_file: str = "results.csv"):
         self.results_file = results_file
 
     def process_revision(self, request: RevisionRequest) -> str:
-        """
-        Processes a single revision request.
-        Returns the final revised answer.
-        """
-        # Extract the language and intent from the request
+        global context_variables  # Referência à variável global
+
+        # Construir os dados da pergunta
         language = "portuguese" if request.locale == "pt" else "spanish"
         intent = request.intent.get("name")
 
-        # Build the JSON with the question fields
         question_data = {
             "question": request.question,
-            "answer": request.answer,
             "context": request.context,
             "category": request.category,
             "metadata": request.metadata,
@@ -35,76 +33,103 @@ class RevisionService:
             "original_answer": request.answer,
         }
 
-        formatted_question = json.dumps(
-            question_data, indent=2, ensure_ascii=False)
+        formatted_question = json.dumps(question_data, indent=2, ensure_ascii=False)
 
+        # Limpa o dicionário global in-place
+        context_variables.clear()
+        context_variables.update({
+            "question": request.question,
+            "context": request.context,
+            "category": request.category,
+            "metadata": request.metadata,
+            "language": language,
+            "intent": intent,
+            "original_answer": request.answer,
+            "semantic_score": None,
+            "justification_semantic": None,
+            "contextual_score": None,
+            "justification_contextual": None,
+            "original_score": None,
+            "suggestions": None,
+            "revised_answer": None,
+            "revised_answer_semantic_score": None,
+            "revised_answer_justification_semantic": None,
+            "revised_answer_contextual_score": None,
+            "revised_answer_justification_contextual": None,
+            "new_score": None,
+            "final_answer": None,
+        })
+
+        # Chama o swarm chat, passando a mesma referência global de context_variables
         chat_history, context_variables, last_active_agent = initiate_swarm_chat(
             user_agent=user_proxy,
             initial_agent=semantic_reviewer,
             agents=[semantic_reviewer, contextual_reviewer, suggester, rewriter],
-            context_variables=question_data,
             messages=[
                 {
                     "role": "user",
-                    "content": f"Please ask the agents to evaluated the answer from the context_variables, you should the necessary information to all of them. Here is the question: {formatted_question}",
+                    "content": (
+                        "You must call the agents in the order: starter, semantic_reviewer, contextual_reviewer, "
+                        "suggester, rewriter. "
+                        "The context_variables are cleaned every time a chat is initiated. "
+                        "Then the starter agent will fill the context_variables with all the necessary information. "
+                        "When you call the semantic_reviewer for the first time, you must pass the following parameters: "
+                        "question, category, language, intent, and original_answer. "
+                        "When you call the contextual_reviewer for the first time, you must pass the following parameters: "
+                        "question, category, language, context, metadata, and original_answer. "
+                        "When you call the suggester for the first time, you must pass the following parameters: "
+                        "question, category, context, metadata, semantic_score, justification_semantic, contextual_score, "
+                        "justification_contextual, and original_answer. "
+                        "When you call the rewriter for the first time, you must pass the following parameters: "
+                        "question, category, language, context, metadata, suggestions, and original_answer. "
+                        "After the rewriter generates the answer, you must call semantic_reviewer again to evaluate the new answer. "
+                        "After the semantic_reviewer has finished, you must call the contextual_reviewer again to evaluate the new answer. "
+                        "This is the initial data that you need to pass the agents: "
+                        f"{formatted_question} "
+                    )
                 }
             ],
+            context_variables=context_variables,  # Usando a mesma referência global
+            after_work=AfterWorkOption.TERMINATE,
         )
 
-        print(context_variables)
-        print(last_active_agent)
+        final_answer = context_variables.get("final_answer")
+        previous_score = context_variables.get("original_score")
+        new_score = context_variables.get("new_score")
+        suggestions = context_variables.get("suggestions")
+        revised_answer = context_variables.get("revised_answer")
 
-        return chat_history
+        if (new_score is not None) and (new_score <= 7):
+            final_answer = "DO_NOT_ANSWER"
 
-        # formatted_question = json.dumps(
-        #     question_data, indent=2, ensure_ascii=False)
-        # message = f"Please send this answer to be reviewed\n{formatted_question}"
+        if (previous_score is not None) and (previous_score > 7):
+            final_answer = request.answer
 
-        # result = user_proxy.initiate_chat(recipient=manager, message=message)
+        new_score = new_score if new_score is not None else "-"
+        final_answer = final_answer if final_answer != "DO_NOT_ANSWER" else "-"
 
-        # # Extract total cost, if available
-        # total_cost = result.cost.get(
-        #     'usage_excluding_cached_inference', {}).get('total_cost')
-        # cost_str = f"${total_cost}" if total_cost is not None else "Cost information not available"
+        # Salva os resultados
+        new_record = {
+            "Question": request.question,
+            "Original Answer": request.answer,
+            "Original Score": previous_score,
+            "Original Feedback": request.feedback,
+            "Suggestions": suggestions,
+            "Revised Answer": revised_answer,
+            "Final Score": new_score,
+            "Final Answer": final_answer,
+            "Language": language,
+            "Intent": intent,
+            "Category": request.category,
+        }
+        self.save_result(new_record)
 
-        # # Extract relevant information from the chat history
-        # final_answer, revised_answer, previous_score, new_score, suggestions = self.extract_chat_results(
-        #     manager.chat_messages, request.answer)
-
-        # if (new_score is not None) and (new_score <= 7):
-        #     final_answer = "DO_NOT_ANSWER"
-
-        # if (previous_score is not None) and (previous_score > 7):
-        #     final_answer = request.answer
-
-        # new_score = new_score if new_score is not None else "-"
-
-        # final_answer = final_answer if final_answer != "DO_NOT_ANSWER" else "-"
-
-        # # Build the record to save the results
-        # new_record = {
-        #     "Question": request.question,
-        #     "Original Answer": request.answer,
-        #     # "Correct": request.correct,
-        #     "Original Score": previous_score,
-        #     "Original Feedback": request.feedback,
-        #     "Suggestions": suggestions,
-        #     "Revised Answer": revised_answer,
-        #     "Final Score": new_score,
-        #     "Final Answer": final_answer,
-        #     "Language": language,
-        #     "Intent": request.intent.get("name"),
-        #     "Category": request.category,
-        # }
-
-        # self.save_result(new_record)
-
-        # return {
-        #     "final_answer": final_answer,
-        #     "previous_score": previous_score,
-        #     "new_score": new_score,
-        # }
-
+        return {
+            "final_answer": final_answer,
+            "previous_score": previous_score,
+            "new_score": new_score,
+        }
+    
     def process_revisions(self, requests: List[RevisionRequest]) -> List[str]:
         """
         Processes a list of revision requests.
@@ -116,84 +141,6 @@ class RevisionService:
             responses.append(revised)
 
         return responses
-
-    @staticmethod
-    def extract_chat_results(messages, original_answer):
-        """
-        Extrai informações relevantes do histórico do chat.
-        Retorna: final_answer, previous_score, new_score, suggestions.
-        """
-        final_answer = original_answer
-        revised_answer = None
-        previous_score = None
-        new_score = None
-        suggestions = None
-
-        # Se 'messages' for um dicionário (por exemplo, defaultdict) com listas de mensagens,
-        # "achata" a estrutura em uma única lista
-        if isinstance(messages, dict):
-            flat_messages = []
-
-            for msg_list in messages.values():
-                flat_messages.extend(msg_list)
-
-            messages = flat_messages
-
-        index = 0
-        for msg in reversed(messages):
-            if index >= 3:
-                break
-
-            # Se 'msg' for um dicionário, extrai o conteúdo; caso contrário, usa 'msg' como string
-            content = msg.get("content", "") if isinstance(
-                msg, dict) else str(msg)
-
-            # Expressões regulares para extrair os conteúdos desejados
-            final_answer_match = re.search(
-                r"<final_answer>(.*?)</final_answer>", content, re.DOTALL)
-
-            revised_answer_match = re.search(
-                r"<revised_answer>(.*?)</revised_answer>", content, re.DOTALL)
-
-            previous_score_match = re.search(
-                r"<total_score>(.*?)</total_score>", content)
-
-            new_score_match = re.search(
-                r"<new_score>(.*?)</new_score>", content)
-
-            suggestions_match = re.search(
-                r"<suggestions>(.*?)</suggestions>", content, re.DOTALL)
-
-            if final_answer_match:
-                final_answer = final_answer_match.group(1).strip()
-
-            if revised_answer_match:
-                revised_answer = revised_answer_match.group(1).strip()
-
-            if previous_score_match:
-                try:
-                    previous_score = int(previous_score_match.group(1).strip())
-                except ValueError:
-                    previous_score = None
-
-            if new_score_match:
-                try:
-                    new_score = int(new_score_match.group(1).strip())
-                except ValueError:
-                    new_score = None
-
-            if suggestions_match:
-                suggestions = suggestions_match.group(1).strip()
-
-            if content.find("THIS QUESTION CANNOT BE ANSWERED!!") >= 0:
-                final_answer = "DO_NOT_ANSWER"
-
-            if (previous_score is not None and new_score is not None) or (previous_score is not None and previous_score > 7):
-                break
-
-            index += 1
-
-        return final_answer, revised_answer, previous_score, new_score, suggestions
 
     def save_result(self, record):
         """
