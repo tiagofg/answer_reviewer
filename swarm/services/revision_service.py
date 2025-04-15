@@ -8,7 +8,7 @@ from autogen import AfterWorkOption, initiate_swarm_chat
 
 from models.revision import RevisionRequest
 # Import the necessary agents
-from agents.agents import semantic_reviewer, contextual_reviewer, suggester, rewriter, user_proxy
+from agents.agents import semantic_reviewer, contextual_reviewer, suggester, rewriter, decider, user_proxy
 
 context_variables = dict()  # Variável global para armazenar os context variables
 
@@ -64,15 +64,11 @@ class RevisionService:
         chat_history, context_variables, last_active_agent = initiate_swarm_chat(
             user_agent=user_proxy,
             initial_agent=semantic_reviewer,
-            agents=[semantic_reviewer, contextual_reviewer, suggester, rewriter],
+            agents=[semantic_reviewer, contextual_reviewer, suggester, rewriter, decider],
             messages=[
                 {
                     "role": "user",
                     "content": (
-                        "You must call the agents in the order: starter, semantic_reviewer, contextual_reviewer, "
-                        "suggester, rewriter. "
-                        "The context_variables are cleaned every time a chat is initiated. "
-                        "Then the starter agent will fill the context_variables with all the necessary information. "
                         "When you call the semantic_reviewer for the first time, you must pass the following parameters: "
                         "question, category, language, intent, and original_answer. "
                         "When you call the contextual_reviewer for the first time, you must pass the following parameters: "
@@ -84,12 +80,12 @@ class RevisionService:
                         "question, category, language, context, metadata, suggestions, and original_answer. "
                         "After the rewriter generates the answer, you must call semantic_reviewer again to evaluate the new answer. "
                         "After the semantic_reviewer has finished, you must call the contextual_reviewer again to evaluate the new answer. "
-                        "This is the initial data that you need to pass the agents: "
+                        "This is the initial data that you need to pass to the agents: "
                         f"{formatted_question} "
                     )
                 }
             ],
-            context_variables=context_variables,  # Usando a mesma referência global
+            context_variables=context_variables,
             after_work=AfterWorkOption.TERMINATE,
         )
 
