@@ -94,6 +94,7 @@ class RevisionService:
         new_score = context_variables.get("new_score")
         suggestions = context_variables.get("suggestions")
         revised_answer = context_variables.get("revised_answer")
+        decision = context_variables.get("decision")
 
         if (new_score is not None) and (new_score <= 7):
             final_answer = "DO_NOT_ANSWER"
@@ -104,19 +105,27 @@ class RevisionService:
         new_score = new_score if new_score is not None else "-"
         final_answer = final_answer if final_answer != "DO_NOT_ANSWER" else "-"
 
+        # Extract total cost, if available
+        total_cost = chat_history.cost.get(
+            'usage_excluding_cached_inference', {}).get('total_cost')
+        cost_str = f"${total_cost}" if total_cost is not None else "Cost information not available"
+
         # Salva os resultados
         new_record = {
             "Question": request.question,
             "Original Answer": request.answer,
+            "Correct": request.correct,
             "Original Score": previous_score,
             "Original Feedback": request.feedback,
             "Suggestions": suggestions,
             "Revised Answer": revised_answer,
             "Final Score": new_score,
             "Final Answer": final_answer,
+            "Decision": decision,
             "Language": language,
             "Intent": intent,
             "Category": request.category,
+            "Cost": cost_str,
         }
         self.save_result(new_record)
 

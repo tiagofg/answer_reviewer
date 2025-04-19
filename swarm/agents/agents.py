@@ -56,7 +56,12 @@ def register_contextual_score(contextual_score: int, justification: str, context
 
         context_variables["new_score"] = new_score
 
-    if (original_score is not None and original_score > 7.0) or new_score is not None:
+    if original_score is not None and original_score > 7.0:
+        return autogen.SwarmResult(
+            context_variables=context_variables,
+            after_work=autogen.AfterWork(autogen.AfterWorkOption.TERMINATE),
+        )
+    elif new_score is not None:
         return autogen.SwarmResult(
             context_variables=context_variables,
             agent=decider,
@@ -222,12 +227,11 @@ decider = autogen.AssistantAgent(
         "If the reviewers evaluated the answer negatively, you will receive the revised answer and the scores. "
         "You must decide whether the answer is good enough to be answered or not. "
         "You must always call the function register_decision, passing your decision as parameter. "
+        "If the answer is not good enough and based in the information you think that the rewriter can improve it, your decision must be 'REWRITE'. "
+        "If the answer is not good enough and based in the information you think that is not possible to improve, your decision must be 'DO_NOT_ANSWER'. "
+        "If the answer says that there is no information to fully address the question, your decision must be 'DO_NOT_ANSWER'. "
         "If the original answer is good enough, your decision must be 'ANSWER_ORIGINAL'. "
         "If the revised answer is good enough, your decision must be 'ANSWER_REVISED'. "
-        "If the answer is not good enough and based in the information you think that the rewriter can improve it, your decision must be 'REWRITE'. "
-        "If the answer is not good enough and based in the information you think that the rewriter can't improve it, your decision must be 'DO_NOT_ANSWER'. "
-        "You must only accept answers that explicitly address the question asked, without saying that there is no information available in the context. "
-        "You must only have one of the following decisions: ANSWER_ORIGINAL, ANSWER_REVISED, REWRITE or DO_NOT_ANSWER. "
     ),
     functions=[register_decision],
     max_consecutive_auto_reply=5,
