@@ -9,12 +9,11 @@ load_dotenv()
 # LLM model configuration
 config_list = [
     {
-        "model": "gpt-4o",
-        "api_key": os.getenv("OPEN_AI_API_KEY"),
-        "temperature": 0,
+        "model": "gpt-4.1-mini",
+        "api_key": os.getenv("OPENAI_API_KEY"),
     }
 ]
-llm_config = {"config_list": config_list}
+llm_config = {"config_list": config_list, "temperature": 0.0}
 
 # Reviewer Agent: evaluates the answer and suggests improvements (does not provide the final answer).
 reviewer = autogen.AssistantAgent(
