@@ -9,7 +9,7 @@ load_dotenv()
 # LLM model configuration
 config_list = [
     {
-        "model": "gpt-4.1-mini",
+        "model": "gpt-4o",
         "api_key": os.getenv("OPENAI_API_KEY"),
     }
 ]

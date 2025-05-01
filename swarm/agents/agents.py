@@ -10,7 +10,7 @@ load_dotenv()
 # LLM model configuration
 config_list = [
     {
-        "model": "gpt-4.1-mini",
+        "model": "gpt-4o",
         "api_key": os.getenv("OPENAI_API_KEY"),
     }
 ]
@@ -150,7 +150,7 @@ semantic_reviewer = autogen.AssistantAgent(
     system_message=(
         "You are the Semantic Reviewer whose purpose is to review the semantic of an answer provided for a question asked to the user regarding a product. "
         "Or a revised answer that was written by the rewriter to try to improve the original answer. "
-        "The question may have different intentions, the closest match to the question will be provided along with the question and the answer. "
+        "The question may have different intentions, the closest match will be provided along with the question and the answer. "
         "Another important information is the category, it describes the category of the product related to the question. "
         "You must evaluate only whether the answer is semantically correct, not anything related to the context. "
         "To consider an answer semantically correct, it must explicitly address the question asked and be grammatically correct. "
@@ -244,6 +244,11 @@ user_proxy = autogen.UserProxyAgent(
     code_execution_config={
         "use_docker": False,
     }
+)
+
+autogen.register_hand_off(
+    agent=contextual_reviewer,
+    hand_to=[autogen.AfterWork(autogen.AfterWorkOption.TERMINATE)]
 )
 
 autogen.register_hand_off(

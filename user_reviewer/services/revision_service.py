@@ -1,6 +1,7 @@
 import os
 import csv
 import json
+import re
 from typing import List
 from models.revision import RevisionRequest
 from agents.agents import reviewer, user_proxy  # Import the necessary agents
@@ -24,6 +25,7 @@ class RevisionService:
             "question": request.question,
             "answer": request.answer,
             "context": request.context,
+            "metadata": request.metadata,
             "category": request.category,
             "language": language,
             "intent": intent,
@@ -37,7 +39,7 @@ class RevisionService:
         result = user_proxy.initiate_chat(reviewer, message=message)
 
         # Extract relevant information from the chat history
-        final_answer, score, previous_score, new_score, suggestions = self.extract_chat_results(
+        final_answer, previous_score, new_score, suggestions = self.extract_chat_results(
             result, request.answer)
 
         # Extract total cost, if available
@@ -50,7 +52,6 @@ class RevisionService:
             request.answer, final_answer)
 
         new_score = new_score if new_score is not None else "-"
-        previous_score = previous_score if previous_score is not None else score
 
         # Build the record to save the results
         new_record = {
@@ -86,43 +87,29 @@ class RevisionService:
     @staticmethod
     def extract_chat_results(result, original_answer):
         """
-        Extracts relevant information from the chat history.
-        Returns: final_answer, score, previous_score, new_score, suggestions.
+        Extracts final answer, scores, and suggestions from chat using regex.
+        Returns: final_answer, previous_score, new_score, suggestions.
         """
-        final_answer = original_answer
-        score = None
-        previous_score = None
-        new_score = None
-        suggestions = None
+        chat = getattr(result, "chat_history", []) or []
+        content = "\n".join(msg.get("content", "") for msg in chat if msg.get("name") in ("Reviewer", "User"))
 
-        if hasattr(result, "chat_history") and isinstance(result.chat_history, list):
-            for msg in reversed(result.chat_history):
-                content = msg.get("content", "")
+        # Final answer extraction
+        revised_match = re.search(r"<revised_answer>(.*?)</revised_answer>", content, re.DOTALL)
+        final_answer = revised_match.group(1).strip() if revised_match else original_answer
 
-                # Process the revised answer sent by "User"
-                if msg.get("role") == "assistant" and msg.get("name") == "User":
-                    if "Revised Answer:" in content and final_answer == original_answer:
-                        final_answer = content.split("Revised Answer:")[
-                            1].strip().replace('"', '')
-                    elif "It is not possible to provide a revised answer." in content:
-                        final_answer = "It is not possible to provide a revised answer."
+        # Scores extraction
+        prev_match = re.search(r"<total_score>(\d+)</total_score>", content)
+        scores = [int(prev_match.group(1))] if prev_match else []
+        # If two scores (original and updated) appear, capture both
+        all_scores = re.findall(r"<total_score>(\d+)</total_score>", content)
+        previous_score = int(all_scores[0]) if len(all_scores) > 0 else None
+        new_score = int(all_scores[1]) if len(all_scores) > 1 else None
 
-                # Process the information from the "Reviewer"
-                elif msg.get("name") == "Reviewer":
-                    if "Final Score" in content:
-                        score_value = int(content.split(
-                            "Final Score: ")[1].split("/")[0])
+        # Suggestions extraction
+        sug_match = re.search(r"<suggestions>(.*?)</suggestions>", content, re.DOTALL)
+        suggestions = sug_match.group(1).strip() if sug_match else None
 
-                        if score is None:
-                            score = score_value
-                        else:
-                            new_score = score
-                            previous_score = score_value
-
-                    if "Suggestions:" in content and suggestions is None:
-                        suggestions = content.split("Suggestions:")[1].strip()
-
-        return final_answer, score, previous_score, new_score, suggestions
+        return final_answer, previous_score, new_score, suggestions
 
     @staticmethod
     def determine_revised_answer(original, revised):

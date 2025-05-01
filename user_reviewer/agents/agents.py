@@ -1,4 +1,5 @@
 import os
+import re
 import autogen
 from dotenv import load_dotenv
 
@@ -7,7 +8,7 @@ load_dotenv()
 # LLM model configuration
 config_list = [
     {
-        "model": "gpt-4.1-mini",
+        "model": "gpt-4o",
         "api_key": os.getenv("OPENAI_API_KEY"),
     }
 ]
@@ -21,17 +22,18 @@ reviewer = autogen.AssistantAgent(
     is_termination_msg=lambda msg: "It is not possible to provide a revised answer." in msg.get("content", ""),
     system_message=(
         "You are an AI assistant whose purpose is to review the quality of an answer provided "
-        "for a question asked to the user regarding a product. This question can have 3 different intentions: "
-        "1. Compatibility: the user asks if the product is compatible with another product. "
-        "2. Specification: the user asks about the product's specifications. "
-        "3. Availability: the user asks about the product's availability. "
+        "for a question asked to the user regarding a product. "
+        "The question may have different intentions, the closest match will be provided along with the question and the answer. "
         "The questions and answers may be in Portuguese or Spanish, but your scores and suggestions must be in English. "
         "You must evaluate two main aspects: whether the answer is semantically correct and whether the answer is contextually correct. "
         "Along with the question and the answer, context will be provided that must be taken into account for the evaluation. "
+        "As it will also be provided the metadata, that contains some information and rules for the evaluation, you must take it into account. "
         "You must provide a score from 0 to 5 for each aspect, and the final score will be the sum of the two scores. "
-        "For each score, you must put the number of the score followed by a slash and the total possible score. For example 'Final Score: 8/10.'"
+        "The semantic score should be available in the message, between the tags <semantic_score> and </semantic_score>. "
+        "The contextual score should be available in the message, between the tags <contextual_score> and </contextual_score>. "
+        "The final score should be available in the message, between the tags <total_score> and </total_score>. "
         "If the final score is 7 or less, you must present the points that are incorrect and suggest what should be done to improve the answer. "
-        "The sugestions must be in the end of the message, after the text 'Suggestions:'. "
+        "The sugestions must be provided in the message, between the tags <suggestions> and </suggestions>. "
         "If the final score is higher than 7, you don't need to provide any suggestions. "
         "You must not provide a revised answer, the user will make the necessary corrections and return the corrected answer for evaluation. "
     )
@@ -44,21 +46,18 @@ user_proxy = autogen.UserProxyAgent(
     llm_config=llm_config,
     human_input_mode="NEVER",
     max_consecutive_auto_reply=3,
-    is_termination_msg=lambda msg: "Final Score" in msg.get("content", "") and int(
-        msg.get("content", "").split("Final Score: ")[1].split("/")[0]
-    ) > 7,
+    is_termination_msg=lambda msg: bool(
+        (m := re.search(r"<total_score>(\d+)</total_score>", msg.get("content", "")))
+        and int(m.group(1)) > 7
+    ),
     system_message=(
         "You must send a set of questions and answers to be evaluated by an AI assistant. "
-        "Each question can have 3 different intentions: "
-        "1. Compatibility: the user asks if the product is compatible with another product. "
-        "2. Specification: the user asks about the product's specifications. "
-        "3. Availability: the user asks about the product's availability. "
+        "The question may have different intentions, the closest match will be provided along with the question and the answer. "
         "The questions and answers may be in Portuguese or Spanish; when rewriting the answer, you must consider the original language of the question. "
         "If the final score provided by the reviewer is less than 6, the it will present the points that are incorrect and suggest what should be done to improve the answer. "
         "You must make the suggested corrections and return the corrected answer to be evaluated again. "
-        "Immediately after the text 'Revised Answer:', you must provide the corrected answer. This should be the end of the message. "
-        "If you believe that, given the context, it is not possible to provide a correct answer, you must return the following text: "
-        "'It is not possible to provide a revised answer.' "
+        "The revised answer must be provided in the message, between the tags <revised_answer> and </revised_answer>. "
+        "If you don't have enough information in the context to answer the question, you need return the following text: THIS QUESTION CANNOT BE ANSWERED!!. "
         "If the answer contained some type of greeting or signature, you must keep it in the revised answer. "
     ),
     code_execution_config={
