@@ -58,6 +58,8 @@ class RevisionService:
             "revised_answer_justification_contextual": None,
             "new_score": None,
             "final_answer": None,
+            "decision": None,
+            "decision_justification": None,
         })
 
         # Chama o swarm chat, passando a mesma referência global de context_variables
@@ -95,6 +97,7 @@ class RevisionService:
         suggestions = context_variables.get("suggestions")
         revised_answer = context_variables.get("revised_answer")
         decision = context_variables.get("decision")
+        decision_justification = context_variables.get("decision_justification")
 
         if (new_score is not None) and (new_score <= 7):
             final_answer = "DO_NOT_ANSWER"
@@ -122,6 +125,7 @@ class RevisionService:
             "Final Score": new_score,
             "Final Answer": final_answer,
             "Decision": decision,
+            "Justification": decision_justification,
             "Language": language,
             "Intent": intent,
             "Category": request.category,

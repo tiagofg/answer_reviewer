@@ -16,6 +16,7 @@ config_list = [
 ]
 llm_config = {"config_list": config_list, "temperature": 0.0}
 
+
 def register_semantic_score(semantic_score: int, justification: str, context_variables: dict) -> autogen.SwarmResult:
     """
     Register the semantic score and justification in the context variables.
@@ -32,6 +33,7 @@ def register_semantic_score(semantic_score: int, justification: str, context_var
         agent=contextual_reviewer,
     )
 
+
 def register_contextual_score(contextual_score: int, justification: str, context_variables: dict) -> autogen.SwarmResult:
     """
     Register the contextual score and justification in the context variables.
@@ -44,7 +46,7 @@ def register_contextual_score(contextual_score: int, justification: str, context
         context_variables["justification_contextual"] = justification
 
         semantic_score = context_variables["semantic_score"]
-        original_score = (contextual_score + semantic_score) / 2
+        original_score = (contextual_score + semantic_score)
 
         context_variables["original_score"] = original_score
     else:
@@ -52,11 +54,11 @@ def register_contextual_score(contextual_score: int, justification: str, context
         context_variables["revised_answer_justification_contextual"] = justification
 
         semantic_score = context_variables["revised_answer_semantic_score"]
-        new_score = (contextual_score + semantic_score) / 2
+        new_score = (contextual_score + semantic_score)
 
         context_variables["new_score"] = new_score
 
-    if original_score is not None and original_score > 7.0:
+    if original_score is not None and original_score > 8:
         return autogen.SwarmResult(
             context_variables=context_variables,
             after_work=autogen.AfterWork(autogen.AfterWorkOption.TERMINATE),
@@ -72,6 +74,7 @@ def register_contextual_score(contextual_score: int, justification: str, context
             agent=suggester,
         )
 
+
 def register_suggestions(suggestions: str, context_variables: dict) -> autogen.SwarmResult:
     """
     Register the suggestions in the context variables.
@@ -82,6 +85,7 @@ def register_suggestions(suggestions: str, context_variables: dict) -> autogen.S
         context_variables=context_variables,
         agent=rewriter,
     )
+
 
 def register_revised_answer(revised_answer: str, context_variables: dict) -> autogen.SwarmResult:
     """
@@ -101,19 +105,15 @@ def register_revised_answer(revised_answer: str, context_variables: dict) -> aut
         agent=semantic_reviewer,
     )
 
-def register_decision(decision: str, context_variables: dict) -> autogen.SwarmResult:
+
+def register_decision(decision: str, justification: str, context_variables: dict) -> autogen.SwarmResult:
     """
     Register the decision in the context variables.
     """
     context_variables["decision"] = decision
+    context_variables["decision_justification"] = justification
 
-    if decision == "ANSWER_ORIGINAL":
-        context_variables["final_answer"] = context_variables["original_answer"]
-
-        return autogen.SwarmResult(
-            context_variables=context_variables,
-        )
-    elif decision == "ANSWER_REVISED":
+    if decision == "ANSWER_REVISED":
         context_variables["final_answer"] = context_variables["revised_answer"]
 
         return autogen.SwarmResult(
@@ -137,26 +137,34 @@ def register_decision(decision: str, context_variables: dict) -> autogen.SwarmRe
             context_variables=context_variables,
             agent=rewriter,
         )
-    
+
     context_variables["final_answer"] = "DO_NOT_ANSWER"
 
     return autogen.SwarmResult(
         context_variables=context_variables,
+        after_work=autogen.AfterWork(autogen.AfterWorkOption.TERMINATE),
     )
+
 
 semantic_reviewer = autogen.AssistantAgent(
     name="Semantic_Reviewer",
     llm_config=llm_config,
     system_message=(
-        "You are the Semantic Reviewer whose purpose is to review the semantic of an answer provided for a question asked to the user regarding a product. "
-        "Or a revised answer that was written by the rewriter to try to improve the original answer. "
-        "The question may have different intentions, the closest match will be provided along with the question and the answer. "
-        "Another important information is the category, it describes the category of the product related to the question. "
-        "You must evaluate only whether the answer is semantically correct, not anything related to the context. "
-        "To consider an answer semantically correct, it must explicitly address the question asked and be grammatically correct. "
-        "So an answer containing spelling, grammar mistakes or mixed languages should not get a high semantic score. "
-        "You must provide a score from 0 to 10 for the semantic aspect, together with a brief justification in English. "
-        "You must always call the function register_semantic_score, passing the semantic score and justification as parameters. "
+        "You are the Semantic Reviewer. Your task is to critically evaluate the semantic accuracy of an answer provided to a user's question about a product.\n\n"
+        "You will be provided with the following information:\n"
+        "- **Question**: The user's inquiry regarding the product.\n"
+        "- **Original Answer or Revised Answer**: The response given to the user's question.\n"
+        "- **Category**: The category to which the product belongs.\n"
+        "- **Intent**: The identified intent behind the user's question.\n\n"
+        "Evaluation Criteria:\n"
+        "- The answer must directly and explicitly address all aspects of the user's question.\n"
+        "- It must be grammatically correct, free of spelling errors, and use appropriate language without mixing languages.\n"
+        "- The answer should be concise and avoid unnecessary information.\n"
+        "- Be particularly critical of answers that are vague, incomplete, or contain linguistic errors.\n\n"
+        "Provide a semantic score from 0 to 5, where 5 indicates a perfect semantic match.\n"
+        "Then, call the function register_semantic_score(score: int, justification: str) with your score and a brief justification in English.\n\n"
+        "Example:\n"
+        "register_semantic_score(3, 'The answer addresses the main question but omits details about the product's compatibility.')"
     ),
     functions=[register_semantic_score],
     max_consecutive_auto_reply=6,
@@ -166,16 +174,23 @@ contextual_reviewer = autogen.AssistantAgent(
     name="Contextual_Reviewer",
     llm_config=llm_config,
     system_message=(
-        "You are the Contextual Reviewer whose purpose is to review the contextuality of an answer provided for a question asked to the user regarding a product. "
-        "Or a revised answer that was written by the rewriter to try to improve the original answer. "
-        "You will receive a metadata containing some information and rules for the answer, that should be taken into account. "
-        "Another important information is the category, it describes the category of the product related to the question. "
-        "As is the context, as it contains the information about the product, the store and other useful information. "
-        "You must evaluate only whether the answer is contextually correct, not anything related to the semantic. "
-        "To consider an answer contextually correct, it must have the correct information according to the context or metadata provided. "
-        "So an answer that has missing or incorrect information should not get a high contextual score. "
-        "You must provide a score from 0 to 10 for the contextual aspect, together with a brief justification in English. "
-        "You must always call the function register_contextual_score, passing the contextual score and justification as parameters. "
+        "You are the Contextual Reviewer. Your task is to critically assess whether an answer provided to a user's question about a product aligns with the given context and metadata.\n\n"
+        "You will be provided with the following information:\n"
+        "- **Question**: The user's inquiry regarding the product.\n"
+        "- **Original Answer or Revised Answer**: The response given to the user's question.\n"
+        "- **Category**: The category to which the product belongs.\n"
+        "- **Intent**: The identified intent behind the user's question.\n"
+        "- **Metadata**: Additional information and rules pertinent to the product or store policies.\n"
+        "- **Context**: Crucial details about the product, store, or other relevant information.\n\n"
+        "Evaluation Criteria:\n"
+        "- The answer must be consistent with the information provided in the context and metadata.\n"
+        "- It should not include information that cannot be inferred from the provided context.\n"
+        "- The answer should focus on information relevant to the user's question.\n"
+        "- Be particularly critical of answers that include assumptions, omit critical context, or misrepresent the provided information.\n\n"
+        "Provide a contextual score from 0 to 5, where 5 indicates perfect contextual alignment.\n"
+        "Then, call the function register_contextual_score(score: int, justification: str) with your score and a brief justification in English.\n\n"
+        "Example:\n"
+        "register_contextual_score(2, 'The answer mentions a feature not supported by the product according to the provided metadata.')"
     ),
     functions=[register_contextual_score],
     max_consecutive_auto_reply=6,
@@ -185,12 +200,21 @@ suggester = autogen.AssistantAgent(
     name="Suggester",
     llm_config=llm_config,
     system_message=(
-        "You are the Suggester whose purpose is to suggest improvements for an answer provided for a question asked to the user regarding a product. "
-        "You must provide suggestions for improvement based on the semantic and contextual scores provided by the reviewers. "
-        "They will also provide a brief justification for the scores, you can use this information to provide better suggestions. "
-        "You must not provide a revised answer, only suggestions for improvement. "
-        "The suggestions must be in English, even if the question and answer are in Portuguese or Spanish. "
-        "You must always call the function register_suggestions, passing your suggestions as a parameter. "
+        "You are the Suggester. Your purpose is to suggest improvements for an answer provided to a user's question about a product.\n\n"
+        "You will be provided with:\n"
+        "- **Question**: The user's inquiry regarding the product.\n"
+        "- **Original Answer**: The response given to the user's question.\n"
+        "- **Semantic Score**: A score from 0 to 5 indicating the semantic accuracy of the answer.\n"
+        "- **Contextual Score**: A score from 0 to 5 indicating the contextual accuracy of the answer.\n"
+        "- **Justifications**: Brief explanations for the semantic and contextual scores.\n\n"
+        "Based on the scores and justifications provided by the reviewers, you must provide suggestions for improvement.\n"
+        "- Focus on addressing specific issues highlighted in the justifications.\n"
+        "- Ensure that your suggestions are actionable and aimed at enhancing the answer's quality.\n\n"
+        "Do not provide a revised answer, only suggestions for improvement.\n"
+        "The suggestions must be in English, while the question and answer may be in Portuguese or Spanish.\n"
+        "You must always call the function register_suggestions, passing your suggestions as a parameter.\n\n"
+        "Example:\n"
+        "register_suggestions('The answer should directly address the user's question about the product's compatibility and avoid unrelated information.')"
     ),
     functions=[register_suggestions],
     max_consecutive_auto_reply=3,
@@ -200,18 +224,25 @@ rewriter = autogen.AssistantAgent(
     name="Rewriter",
     llm_config=llm_config,
     system_message=(
-        "You are the Rewriter whose purpose is to rewrite answers that have not been evaluated positively by the reviewers. "
-        "You will receive the original question, the original answer, and the suggestions for improvement made by the suggester. "
-        "Other important information that you should use to rewrite the answer are the context, the category, the intent and the metadata. "
-        "The context is an object that contains the information about the product, the store and other useful information. "
-        "The category is a string that describes the category of the product related to the question. "
-        "The intent is an object that contains the possible intents of the question, calculated based on the question. "
-        "The metadata is an object that contains some information and rules for the answer, that should be taken into account. "
-        "The questions and answers may be in Portuguese or Spanish, your revised answer must be in the original language of the question. "
-        "If the answer contains some type of greeting or signature, you must keep it in the revised answer. "
-        "If you consider that there isn't enough information to provide a revised answer, your revised answer should be 'CANNOT REWRITE'. "
-        "You must use only information that can be explicitly inferred from the context, and that makes sense for the question asked. "
-        "You must always call the function register_revised_answer, passing the revised answer as a parameter. "
+        "You are the Rewriter. Your task is to rewrite answers that have not been evaluated positively by the reviewers, ensuring they meet both semantic and contextual standards.\n\n"
+        "You will be provided with the following information:\n"
+        "- **Question**: The user's inquiry regarding the product.\n"
+        "- **Original Answer**: The initial response given to the user's question.\n"
+        "- **Suggestions**: Recommendations for improvement provided by the Suggester.\n"
+        "- **Context**: Crucial details about the product, store, or other relevant information.\n"
+        "- **Category**: The category to which the product belongs.\n"
+        "- **Intent**: The identified intent behind the user's question.\n"
+        "- **Metadata**: Additional information and rules pertinent to the product or store policies.\n\n"
+        "Evaluation Criteria:\n"
+        "- The revised answer must directly and explicitly address all aspects of the user's question.\n"
+        "- It must be consistent with the information provided in the context and metadata.\n"
+        "- The answer should be grammatically correct, free of spelling errors, and use appropriate language without mixing languages.\n"
+        "- Retain any greetings or signatures present in the original answer.\n"
+        "- If there isn't enough information to provide a revised answer, return 'CANNOT REWRITE'.\n\n"
+        "Provide the revised answer in the original language of the question.\n"
+        "Then, call the function register_revised_answer(revised_answer: str) with your revised answer as a parameter.\n\n"
+        "Example:\n"
+        "register_revised_answer('Olá! O produto é compatível com o modelo mencionado e está disponível em nossa loja.')"
     ),
     functions=[register_revised_answer],
     max_consecutive_auto_reply=3,
@@ -221,17 +252,29 @@ decider = autogen.AssistantAgent(
     name="Decider",
     llm_config=llm_config,
     system_message=(
-        "You are the Decider whose purpose is to decide whether the answer provided for the user is good enough or can be improved. "
-        "If the reviewers evaluated the answer positively, you will receive the original answer and the scores. "
-        "If the reviewers evaluated the answer negatively, you will receive the revised answer and the scores. "
-        "You must decide based on the information you have access if the question can be answered with the given answer or not. "
-        "You must not accept an answer that mentions another product, unless it is mentioned in the context or metadata, containing a link to it. "
-        "You must not accept an answer that says that the any part of the question cannot be answered. "
-        "You must always call the function register_decision, passing your decision as a parameter. "
-        "If the answer is not good enough and based on the given information you think that the rewriter can improve it, your decision must be 'REWRITE'. "
-        "If the answer is not good enough and based on the given information you think that is not possible to improve, your decision must be 'DO_NOT_ANSWER'. "
-        "If the answer mentions that there is no information to fully address the question, your decision must be 'DO_NOT_ANSWER'. "
-        "If the revised answer is a clear improvement from the original and covers all the question, your decision must be 'ANSWER_REVISED'. "
+        "You are the Decider. Your task is to determine whether the revised answer provided to a user's question about a product is acceptable, requires further improvement, or if the question should not be answered at all.\n\n"
+        "You will be provided with the following information:\n"
+        "- **Question**: The user's inquiry regarding the product.\n"
+        "- **Original Answer**: The initial response given to the user's question.\n"
+        "- **Revised Answer**: The improved response provided by the Rewriter.\n"
+        "- **Context**: Crucial details about the product, store, or other relevant information.\n"
+        "- **Category**: The category to which the product belongs.\n"
+        "- **Intent**: The identified intent behind the user's question.\n"
+        "- **Metadata**: Additional information and rules pertinent to the product or store policies.\n"
+        "- **Semantic and Contextual Scores**: Scores and justifications provided by the reviewers.\n"
+        "- **Suggestions**: Recommendations for improvement provided by the Suggester.\n\n"
+        "Evaluation Criteria:\n"
+        "- Determine if the revised answer fully addresses the user's question with semantic and contextual accuracy.\n"
+        "- Do not accept answers that mention another product unless it is mentioned in the context or metadata, containing a link to it.\n"
+        "- Do not accept answers that state any part of the question cannot be answered due to insufficient information.\n"
+        "- Be particularly critical of answers that are vague, incomplete, or contain incorrect information.\n\n"
+        "Possible Decisions:\n"
+        "- **ANSWER_REVISED**: The revised answer is acceptable and fully addresses the question.\n"
+        "- **REWRITE**: The revised answer is not good enough, but can be improved based on the given information.\n"
+        "- **DO_NOT_ANSWER**: The revised answer is not good enough and cannot be improved based on the given information.\n\n"
+        "Then, call the function register_decision(decision: str, justification: str) with your decision and a brief justification in English.\n\n"
+        "Example:\n"
+        "register_decision('REWRITE', 'The revised answer lacks specific details about the product's compatibility, which are available in the provided context.')"
     ),
     functions=[register_decision],
     max_consecutive_auto_reply=5,
