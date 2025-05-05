@@ -1,23 +1,22 @@
 import os
-from typing import Any, Dict, List, Union
-import autogen
 import re
 
+from autogen import AssistantAgent, UserProxyAgent
 from dotenv import load_dotenv
+from autogen.agentchat.group import AgentTarget, ContextVariables, ReplyResult, TerminateTarget
 
 load_dotenv()
 
-# LLM model configuration
 config_list = [
     {
-        "model": "gpt-4o",
+        "model": "gpt-4.1-mini",
         "api_key": os.getenv("OPENAI_API_KEY"),
     }
 ]
 llm_config = {"config_list": config_list, "temperature": 0.0}
 
 
-def register_semantic_score(semantic_score: int, justification: str, context_variables: dict) -> autogen.SwarmResult:
+def register_semantic_score(semantic_score: int, justification: str, context_variables: ContextVariables) -> ReplyResult:
     """
     Register the semantic score and justification in the context variables.
     """
@@ -28,13 +27,14 @@ def register_semantic_score(semantic_score: int, justification: str, context_var
         context_variables["revised_answer_semantic_score"] = semantic_score
         context_variables["revised_answer_justification_semantic"] = justification
 
-    return autogen.SwarmResult(
+    return ReplyResult(
         context_variables=context_variables,
-        agent=contextual_reviewer,
+        target=AgentTarget(contextual_reviewer),
+        message="The semantic score and justification have been registered, handing over to the Contextual Reviewer.",
     )
 
 
-def register_contextual_score(contextual_score: int, justification: str, context_variables: dict) -> autogen.SwarmResult:
+def register_contextual_score(contextual_score: int, justification: str, context_variables: ContextVariables) -> ReplyResult:
     """
     Register the contextual score and justification in the context variables.
     """
@@ -59,35 +59,39 @@ def register_contextual_score(contextual_score: int, justification: str, context
         context_variables["new_score"] = new_score
 
     if original_score is not None and original_score > 8:
-        return autogen.SwarmResult(
+        return ReplyResult(
             context_variables=context_variables,
-            after_work=autogen.AfterWork(autogen.AfterWorkOption.TERMINATE),
+            target=TerminateTarget(),
+            message="The original score is greater than 8, terminating the process.",
         )
     elif new_score is not None:
-        return autogen.SwarmResult(
+        return ReplyResult(
             context_variables=context_variables,
-            agent=decider,
+            target=AgentTarget(decider),
+            message="The new score has been registered, handing over to the Decider.",
         )
     else:
-        return autogen.SwarmResult(
+        return ReplyResult(
             context_variables=context_variables,
-            agent=suggester,
+            target=AgentTarget(suggester),
+            message="The contextual score and justification have been registered, handing over to the Suggester.",
         )
 
 
-def register_suggestions(suggestions: str, context_variables: dict) -> autogen.SwarmResult:
+def register_suggestions(suggestions: str, context_variables: ContextVariables) -> ReplyResult:
     """
     Register the suggestions in the context variables.
     """
     context_variables["suggestions"] = suggestions
 
-    return autogen.SwarmResult(
+    return ReplyResult(
         context_variables=context_variables,
-        agent=rewriter,
+        target=AgentTarget(rewriter),
+        message="The suggestions have been registered, handing over to the Rewriter.",
     )
 
 
-def register_revised_answer(revised_answer: str, context_variables: dict) -> autogen.SwarmResult:
+def register_revised_answer(revised_answer: str, context_variables: ContextVariables) -> ReplyResult:
     """
     Register the revised answer in the context variables.
     """
@@ -96,17 +100,20 @@ def register_revised_answer(revised_answer: str, context_variables: dict) -> aut
     if re.search(r"^CANNOT REWRITE$", revised_answer):
         context_variables["final_answer"] = "DO_NOT_ANSWER"
 
-        return autogen.SwarmResult(
+        return ReplyResult(
             context_variables=context_variables,
+            target=TerminateTarget(),
+            message="The revised answer is 'CANNOT REWRITE', terminating the process.",
         )
 
-    return autogen.SwarmResult(
+    return ReplyResult(
         context_variables=context_variables,
-        agent=semantic_reviewer,
+        target=AgentTarget(semantic_reviewer),
+        message="The revised answer has been registered, handing over to the Semantic Reviewer.",
     )
 
 
-def register_decision(decision: str, justification: str, context_variables: dict) -> autogen.SwarmResult:
+def register_decision(decision: str, justification: str, context_variables: ContextVariables) -> ReplyResult:
     """
     Register the decision in the context variables.
     """
@@ -116,8 +123,10 @@ def register_decision(decision: str, justification: str, context_variables: dict
     if decision == "ANSWER_REVISED":
         context_variables["final_answer"] = context_variables["revised_answer"]
 
-        return autogen.SwarmResult(
+        return ReplyResult(
             context_variables=context_variables,
+            target=TerminateTarget(),
+            message="The decision is 'ANSWER_REVISED', terminating the process.",
         )
     elif decision == "REWRITE":
         context_variables["answer"] = context_variables["revised_answer"]
@@ -133,70 +142,76 @@ def register_decision(decision: str, justification: str, context_variables: dict
         context_variables["suggestions"] = None
         context_variables["new_score"] = None
 
-        return autogen.SwarmResult(
+        return ReplyResult(
             context_variables=context_variables,
-            agent=rewriter,
+            target=AgentTarget(rewriter),
+            message="The decision is 'REWRITE', handing over to the Rewriter.",
         )
 
     context_variables["final_answer"] = "DO_NOT_ANSWER"
 
-    return autogen.SwarmResult(
+    return ReplyResult(
         context_variables=context_variables,
-        after_work=autogen.AfterWork(autogen.AfterWorkOption.TERMINATE),
+        target=TerminateTarget(),
+        message="The decision is 'DO_NOT_ANSWER', terminating the process.",
     )
 
 
-semantic_reviewer = autogen.AssistantAgent(
+semantic_reviewer = AssistantAgent(
     name="Semantic_Reviewer",
     llm_config=llm_config,
     system_message=(
         "You are the Semantic Reviewer. Your task is to critically evaluate the semantic accuracy of an answer provided to a user's question about a product.\n\n"
         "You will be provided with the following information:\n"
         "- **Question**: The user's inquiry regarding the product.\n"
-        "- **Original Answer or Revised Answer**: The response given to the user's question.\n"
+        "- **Original Answer**: The initial response given to the user's question.\n"
+        "- **Revised Answer**: The improved response provided by the Rewriter, if available.\n"
         "- **Category**: The category to which the product belongs.\n"
         "- **Intent**: The identified intent behind the user's question.\n\n"
+        "Evaluation Instructions:\n"
+        "- If a Revised Answer is provided, evaluate it.\n"
+        "- If the Revised Answer is not provided, evaluate the Original Answer.\n\n"
         "Evaluation Criteria:\n"
         "- The answer must directly and explicitly address all aspects of the user's question.\n"
         "- It must be grammatically correct, free of spelling errors, and use appropriate language without mixing languages.\n"
         "- The answer should be concise and avoid unnecessary information.\n"
         "- Be particularly critical of answers that are vague, incomplete, or contain linguistic errors.\n\n"
         "Provide a semantic score from 0 to 5, where 5 indicates a perfect semantic match.\n"
-        "Then, call the function register_semantic_score(score: int, justification: str) with your score and a brief justification in English.\n\n"
-        "Example:\n"
-        "register_semantic_score(3, 'The answer addresses the main question but omits details about the product's compatibility.')"
+        "You must always call the function register_semantic_score with your score and a brief justification in English, do nothing else.\n\n"
     ),
     functions=[register_semantic_score],
     max_consecutive_auto_reply=6,
 )
 
-contextual_reviewer = autogen.AssistantAgent(
+contextual_reviewer = AssistantAgent(
     name="Contextual_Reviewer",
     llm_config=llm_config,
     system_message=(
         "You are the Contextual Reviewer. Your task is to critically assess whether an answer provided to a user's question about a product aligns with the given context and metadata.\n\n"
         "You will be provided with the following information:\n"
         "- **Question**: The user's inquiry regarding the product.\n"
-        "- **Original Answer or Revised Answer**: The response given to the user's question.\n"
+        "- **Original Answer**: The initial response given to the user's question.\n"
+        "- **Revised Answer**: The improved response provided by the Rewriter, if available.\n"
         "- **Category**: The category to which the product belongs.\n"
         "- **Intent**: The identified intent behind the user's question.\n"
         "- **Metadata**: Additional information and rules pertinent to the product or store policies.\n"
         "- **Context**: Crucial details about the product, store, or other relevant information.\n\n"
+        "Evaluation Instructions:\n"
+        "- If a Revised Answer is provided, evaluate it.\n"
+        "- If the Revised Answer is not provided, evaluate the Original Answer.\n\n"
         "Evaluation Criteria:\n"
         "- The answer must be consistent with the information provided in the context and metadata.\n"
         "- It should not include information that cannot be inferred from the provided context.\n"
         "- The answer should focus on information relevant to the user's question.\n"
         "- Be particularly critical of answers that include assumptions, omit critical context, or misrepresent the provided information.\n\n"
         "Provide a contextual score from 0 to 5, where 5 indicates perfect contextual alignment.\n"
-        "Then, call the function register_contextual_score(score: int, justification: str) with your score and a brief justification in English.\n\n"
-        "Example:\n"
-        "register_contextual_score(2, 'The answer mentions a feature not supported by the product according to the provided metadata.')"
+        "You must always call the function register_contextual_score with your score and a brief justification in English, do nothing else.\n\n"
     ),
     functions=[register_contextual_score],
     max_consecutive_auto_reply=6,
 )
 
-suggester = autogen.AssistantAgent(
+suggester = AssistantAgent(
     name="Suggester",
     llm_config=llm_config,
     system_message=(
@@ -212,15 +227,13 @@ suggester = autogen.AssistantAgent(
         "- Ensure that your suggestions are actionable and aimed at enhancing the answer's quality.\n\n"
         "Do not provide a revised answer, only suggestions for improvement.\n"
         "The suggestions must be in English, while the question and answer may be in Portuguese or Spanish.\n"
-        "You must always call the function register_suggestions, passing your suggestions as a parameter.\n\n"
-        "Example:\n"
-        "register_suggestions('The answer should directly address the user's question about the product's compatibility and avoid unrelated information.')"
+        "You must always call the function register_suggestions with your suggestions as a parameter, do nothing else.\n"
     ),
     functions=[register_suggestions],
     max_consecutive_auto_reply=3,
 )
 
-rewriter = autogen.AssistantAgent(
+rewriter = AssistantAgent(
     name="Rewriter",
     llm_config=llm_config,
     system_message=(
@@ -240,15 +253,13 @@ rewriter = autogen.AssistantAgent(
         "- Retain any greetings or signatures present in the original answer.\n"
         "- If there isn't enough information to provide a revised answer, return 'CANNOT REWRITE'.\n\n"
         "Provide the revised answer in the original language of the question.\n"
-        "Then, call the function register_revised_answer(revised_answer: str) with your revised answer as a parameter.\n\n"
-        "Example:\n"
-        "register_revised_answer('Olá! O produto é compatível com o modelo mencionado e está disponível em nossa loja.')"
+        "You must always call the function register_revised_answer with your revised answer as a parameter, do nothing else.\n\n"
     ),
     functions=[register_revised_answer],
     max_consecutive_auto_reply=3,
 )
 
-decider = autogen.AssistantAgent(
+decider = AssistantAgent(
     name="Decider",
     llm_config=llm_config,
     system_message=(
@@ -267,39 +278,23 @@ decider = autogen.AssistantAgent(
         "- Determine if the revised answer fully addresses the user's question with semantic and contextual accuracy.\n"
         "- Do not accept answers that mention another product unless it is mentioned in the context or metadata, containing a link to it.\n"
         "- Do not accept answers that state any part of the question cannot be answered due to insufficient information.\n"
-        "- Be particularly critical of answers that are vague, incomplete, or contain incorrect information.\n\n"
+        "- Be particularly critical of answers that are vague, incomplete, or contain incorrect information.\n"
+        "- If the answer has already been revised before and there hasn't been sufficient improvement, return 'DO_NOT_ANSWER'.\n\n"
         "Possible Decisions:\n"
         "- **ANSWER_REVISED**: The revised answer is acceptable and fully addresses the question.\n"
         "- **REWRITE**: The revised answer is not good enough, but can be improved based on the given information.\n"
         "- **DO_NOT_ANSWER**: The revised answer is not good enough and cannot be improved based on the given information.\n\n"
-        "Then, call the function register_decision(decision: str, justification: str) with your decision and a brief justification in English.\n\n"
-        "Example:\n"
-        "register_decision('REWRITE', 'The revised answer lacks specific details about the product's compatibility, which are available in the provided context.')"
+        "You must always call the function register_decision with your decision and a brief justification in English, do nothing else.\n\n"
     ),
     functions=[register_decision],
     max_consecutive_auto_reply=5,
 )
 
-user_proxy = autogen.UserProxyAgent(
+user_proxy = UserProxyAgent(
     name="User",
     llm_config=llm_config,
     human_input_mode="NEVER",
     code_execution_config={
         "use_docker": False,
     }
-)
-
-autogen.register_hand_off(
-    agent=contextual_reviewer,
-    hand_to=[autogen.AfterWork(autogen.AfterWorkOption.TERMINATE)]
-)
-
-autogen.register_hand_off(
-    agent=rewriter,
-    hand_to=[autogen.AfterWork(autogen.AfterWorkOption.TERMINATE)]
-)
-
-autogen.register_hand_off(
-    agent=decider,
-    hand_to=[autogen.AfterWork(autogen.AfterWorkOption.TERMINATE)]
 )

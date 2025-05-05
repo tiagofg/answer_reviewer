@@ -4,22 +4,22 @@ import json
 
 from typing import List
 
-from autogen import AfterWorkOption, initiate_swarm_chat
+from autogen.agentchat.group import ContextVariables
+from autogen.agentchat.group.multi_agent_chat import initiate_group_chat
+from autogen.agentchat.group.patterns import DefaultPattern
 
 from models.revision import RevisionRequest
-# Import the necessary agents
 from agents.agents import semantic_reviewer, contextual_reviewer, suggester, rewriter, decider, user_proxy
 
-context_variables = dict()  # Variável global para armazenar os context variables
+context_variables: ContextVariables = ContextVariables(data={})
 
 class RevisionService:
     def __init__(self, results_file: str = "results.csv"):
         self.results_file = results_file
 
     def process_revision(self, request: RevisionRequest) -> str:
-        global context_variables  # Referência à variável global
+        global context_variables
 
-        # Construir os dados da pergunta
         language = "portuguese" if request.locale == "pt" else "spanish"
         intent = request.intent.get("name")
 
@@ -35,7 +35,6 @@ class RevisionService:
 
         formatted_question = json.dumps(question_data, indent=2, ensure_ascii=False)
 
-        # Limpa o dicionário global in-place
         context_variables.clear()
         context_variables.update({
             "question": request.question,
@@ -62,42 +61,36 @@ class RevisionService:
             "decision_justification": None,
         })
 
-        # Chama o swarm chat, passando a mesma referência global de context_variables
-        chat_history, context_variables, last_active_agent = initiate_swarm_chat(
-            user_agent=user_proxy,
-            initial_agent=semantic_reviewer,
+        swarm_pattern = DefaultPattern(
             agents=[semantic_reviewer, contextual_reviewer, suggester, rewriter, decider],
+            initial_agent=semantic_reviewer,
+            context_variables=context_variables,
+            user_agent=user_proxy,
+        )
+
+        result, final_context, last_agent = initiate_group_chat(
+            pattern=swarm_pattern,
             messages=[
                 {
                     "role": "user",
                     "content": (
-                        "When you call the semantic_reviewer for the first time, you must pass the following parameters: "
-                        "question, category, language, intent, and original_answer. "
-                        "When you call the contextual_reviewer for the first time, you must pass the following parameters: "
-                        "question, category, language, context, metadata, and original_answer. "
-                        "When you call the suggester for the first time, you must pass the following parameters: "
-                        "question, category, context, metadata, semantic_score, justification_semantic, contextual_score, "
-                        "justification_contextual, and original_answer. "
-                        "When you call the rewriter for the first time, you must pass the following parameters: "
-                        "question, category, language, context, metadata, suggestions, and original_answer. "
-                        "After the rewriter generates the answer, you must call semantic_reviewer again to evaluate the new answer. "
-                        "After the semantic_reviewer has finished, you must call the contextual_reviewer again to evaluate the new answer. "
-                        "This is the initial data that you need to pass to the agents: "
+                        "The agents need to work together to review the answer to the question. \n"
+                        "If they don't think that the answer is good enough, they should suggest a better one or decide to not answer. \n"
+                        "This is the data they have to work with: \n"
                         f"{formatted_question} "
                     )
                 }
             ],
-            context_variables=context_variables,
-            after_work=AfterWorkOption.TERMINATE,
+            max_rounds=24
         )
 
-        final_answer = context_variables.get("final_answer")
-        previous_score = context_variables.get("original_score")
-        new_score = context_variables.get("new_score")
-        suggestions = context_variables.get("suggestions")
-        revised_answer = context_variables.get("revised_answer")
-        decision = context_variables.get("decision")
-        decision_justification = context_variables.get("decision_justification")
+        final_answer = final_context.get("final_answer")
+        previous_score = final_context.get("original_score")
+        new_score = final_context.get("new_score")
+        suggestions = final_context.get("suggestions")
+        revised_answer = final_context.get("revised_answer")
+        decision = final_context.get("decision")
+        decision_justification = final_context.get("decision_justification")
 
         if (new_score is not None) and (new_score <= 7):
             final_answer = "DO_NOT_ANSWER"
@@ -108,10 +101,10 @@ class RevisionService:
         new_score = new_score if new_score is not None else "-"
         final_answer = final_answer if final_answer != "DO_NOT_ANSWER" else "-"
 
-        # Extract total cost, if available
-        total_cost = chat_history.cost.get(
-            'usage_excluding_cached_inference', {}).get('total_cost')
-        cost_str = f"${total_cost}" if total_cost is not None else "Cost information not available"
+        # # Extract total cost, if available
+        # total_cost = chat_history.cost.get(
+        #     'usage_excluding_cached_inference', {}).get('total_cost')
+        # cost_str = f"${total_cost}" if total_cost is not None else "Cost information not available"
 
         # Salva os resultados
         new_record = {
@@ -129,7 +122,6 @@ class RevisionService:
             "Language": language,
             "Intent": intent,
             "Category": request.category,
-            "Cost": cost_str,
         }
         self.save_result(new_record)
 
