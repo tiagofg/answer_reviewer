@@ -9,7 +9,7 @@ load_dotenv()
 
 config_list = [
     {
-        "model": "gpt-4.1-mini",
+        "model": "gpt-4o",
         "api_key": os.getenv("OPENAI_API_KEY"),
     }
 ]
@@ -96,6 +96,7 @@ def register_revised_answer(revised_answer: str, context_variables: ContextVaria
     Register the revised answer in the context variables.
     """
     context_variables["revised_answer"] = revised_answer
+    context_variables["number_of_revisions"] += 1
 
     if re.search(r"^CANNOT REWRITE$", revised_answer):
         context_variables["final_answer"] = "DO_NOT_ANSWER"
@@ -129,11 +130,6 @@ def register_decision(decision: str, justification: str, context_variables: Cont
             message="The decision is 'ANSWER_REVISED', terminating the process.",
         )
     elif decision == "REWRITE":
-        context_variables["answer"] = context_variables["revised_answer"]
-        context_variables["semantic_score"] = context_variables["revised_answer_semantic_score"]
-        context_variables["justification_semantic"] = context_variables["revised_answer_justification_semantic"]
-        context_variables["contextual_score"] = context_variables["revised_answer_contextual_score"]
-        context_variables["justification_contextual"] = context_variables["revised_answer_justification_contextual"]
         context_variables["revised_answer"] = None
         context_variables["revised_answer_semantic_score"] = None
         context_variables["revised_answer_justification_semantic"] = None
@@ -169,7 +165,7 @@ semantic_reviewer = AssistantAgent(
         "- **Category**: The category to which the product belongs.\n"
         "- **Intent**: The identified intent behind the user's question.\n\n"
         "Evaluation Instructions:\n"
-        "- If a Revised Answer is provided, evaluate it.\n"
+        "- If the Revised Answer and the Original Answer are provided, evaluate the Revised Answer.\n"
         "- If the Revised Answer is not provided, evaluate the Original Answer.\n\n"
         "Evaluation Criteria:\n"
         "- The answer must directly and explicitly address all aspects of the user's question.\n"
@@ -177,7 +173,7 @@ semantic_reviewer = AssistantAgent(
         "- The answer should be concise and avoid unnecessary information.\n"
         "- Be particularly critical of answers that are vague, incomplete, or contain linguistic errors.\n\n"
         "Provide a semantic score from 0 to 5, where 5 indicates a perfect semantic match.\n"
-        "You must always call the function register_semantic_score with your score and a brief justification in English, do nothing else.\n\n"
+        "You must always call the function register_semantic_score with your semantic_score and a brief justification in English, do nothing else.\n\n"
     ),
     functions=[register_semantic_score],
     max_consecutive_auto_reply=6,
@@ -197,7 +193,7 @@ contextual_reviewer = AssistantAgent(
         "- **Metadata**: Additional information and rules pertinent to the product or store policies.\n"
         "- **Context**: Crucial details about the product, store, or other relevant information.\n\n"
         "Evaluation Instructions:\n"
-        "- If a Revised Answer is provided, evaluate it.\n"
+        "- If the Revised Answer and the Original Answer are provided, evaluate the Revised Answer.\n"
         "- If the Revised Answer is not provided, evaluate the Original Answer.\n\n"
         "Evaluation Criteria:\n"
         "- The answer must be consistent with the information provided in the context and metadata.\n"
@@ -205,7 +201,7 @@ contextual_reviewer = AssistantAgent(
         "- The answer should focus on information relevant to the user's question.\n"
         "- Be particularly critical of answers that include assumptions, omit critical context, or misrepresent the provided information.\n\n"
         "Provide a contextual score from 0 to 5, where 5 indicates perfect contextual alignment.\n"
-        "You must always call the function register_contextual_score with your score and a brief justification in English, do nothing else.\n\n"
+        "You must always call the function register_contextual_score with your contextual_score and a brief justification in English, do nothing else.\n\n"
     ),
     functions=[register_contextual_score],
     max_consecutive_auto_reply=6,
@@ -279,7 +275,7 @@ decider = AssistantAgent(
         "- Do not accept answers that mention another product unless it is mentioned in the context or metadata, containing a link to it.\n"
         "- Do not accept answers that state any part of the question cannot be answered due to insufficient information.\n"
         "- Be particularly critical of answers that are vague, incomplete, or contain incorrect information.\n"
-        "- If the answer has already been revised before and there hasn't been sufficient improvement, return 'DO_NOT_ANSWER'.\n\n"
+        "- If the answer has already been revised 2 times or more and there hasn't been sufficient improvement, return 'DO_NOT_ANSWER'.\n\n"
         "Possible Decisions:\n"
         "- **ANSWER_REVISED**: The revised answer is acceptable and fully addresses the question.\n"
         "- **REWRITE**: The revised answer is not good enough, but can be improved based on the given information.\n"

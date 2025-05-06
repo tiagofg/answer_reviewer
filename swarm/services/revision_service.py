@@ -59,6 +59,7 @@ class RevisionService:
             "final_answer": None,
             "decision": None,
             "decision_justification": None,
+            "number_of_revisions": 0,
         })
 
         swarm_pattern = DefaultPattern(
@@ -81,7 +82,7 @@ class RevisionService:
                     )
                 }
             ],
-            max_rounds=24
+            max_rounds=30,
         )
 
         final_answer = final_context.get("final_answer")
@@ -91,6 +92,7 @@ class RevisionService:
         revised_answer = final_context.get("revised_answer")
         decision = final_context.get("decision")
         decision_justification = final_context.get("decision_justification")
+        number_of_revisions = final_context.get("number_of_revisions")
 
         if (new_score is not None) and (new_score <= 7):
             final_answer = "DO_NOT_ANSWER"
@@ -119,6 +121,7 @@ class RevisionService:
             "Final Answer": final_answer,
             "Decision": decision,
             "Justification": decision_justification,
+            "Number of Revisions": number_of_revisions,
             "Language": language,
             "Intent": intent,
             "Category": request.category,
