@@ -30,7 +30,7 @@ def register_semantic_score(semantic_score: int, justification: str, context_var
     return ReplyResult(
         context_variables=context_variables,
         target=AgentTarget(contextual_reviewer),
-        message="The semantic score and justification have been registered, handing over to the Contextual Reviewer.",
+        message="The semantic score and justification have been registered, handing over to the Contextual Reviewer for his review.",
     )
 
 
@@ -68,13 +68,13 @@ def register_contextual_score(contextual_score: int, justification: str, context
         return ReplyResult(
             context_variables=context_variables,
             target=AgentTarget(decider),
-            message="The new score has been registered, handing over to the Decider.",
+            message="The new score has been registered, handing over to the Decider to make a decision about the revised answer.",
         )
     else:
         return ReplyResult(
             context_variables=context_variables,
             target=AgentTarget(suggester),
-            message="The contextual score and justification have been registered, handing over to the Suggester.",
+            message="The contextual score and justification have been registered, handing over to the Suggester to suggest improvements.",
         )
 
 
@@ -87,7 +87,7 @@ def register_suggestions(suggestions: str, context_variables: ContextVariables) 
     return ReplyResult(
         context_variables=context_variables,
         target=AgentTarget(rewriter),
-        message="The suggestions have been registered, handing over to the Rewriter.",
+        message="The suggestions have been registered, handing over to the Rewriter to write a new answer.",
     )
 
 
@@ -104,13 +104,13 @@ def register_revised_answer(revised_answer: str, context_variables: ContextVaria
         return ReplyResult(
             context_variables=context_variables,
             target=TerminateTarget(),
-            message="The revised answer is 'CANNOT REWRITE', terminating the process.",
+            message="It's not possible to write a new answer, terminating the process.",
         )
 
     return ReplyResult(
         context_variables=context_variables,
         target=AgentTarget(semantic_reviewer),
-        message="The revised answer has been registered, handing over to the Semantic Reviewer.",
+        message="The revised answer has been registered, handing over to the Semantic Reviewer to review it.",
     )
 
 
@@ -141,7 +141,7 @@ def register_decision(decision: str, justification: str, context_variables: Cont
         return ReplyResult(
             context_variables=context_variables,
             target=AgentTarget(rewriter),
-            message="The decision is 'REWRITE', handing over to the Rewriter.",
+            message="The decision is 'REWRITE', handing over to the Rewriter to write a new answer.",
         )
 
     context_variables["final_answer"] = "DO_NOT_ANSWER"
@@ -165,8 +165,8 @@ semantic_reviewer = AssistantAgent(
         "- **Category**: The category to which the product belongs.\n"
         "- **Intent**: The identified intent behind the user's question.\n\n"
         "Evaluation Instructions:\n"
-        "- If the Revised Answer and the Original Answer are provided, evaluate the Revised Answer.\n"
-        "- If the Revised Answer is not provided, evaluate the Original Answer.\n\n"
+        "- If the Revised Answer and the Original Answer are not none, evaluate the Revised Answer and register the score and the justification for it.\n"
+        "- If the Revised Answer is none, evaluate the Original Answer and register the score and the justification for it.\n\n"
         "Evaluation Criteria:\n"
         "- The answer must directly and explicitly address all aspects of the user's question.\n"
         "- It must be grammatically correct, free of spelling errors, and use appropriate language without mixing languages.\n"
@@ -176,7 +176,6 @@ semantic_reviewer = AssistantAgent(
         "You must always call the function register_semantic_score with your semantic_score and a brief justification in English, do nothing else.\n\n"
     ),
     functions=[register_semantic_score],
-    max_consecutive_auto_reply=6,
 )
 
 contextual_reviewer = AssistantAgent(
@@ -193,8 +192,8 @@ contextual_reviewer = AssistantAgent(
         "- **Metadata**: Additional information and rules pertinent to the product or store policies.\n"
         "- **Context**: Crucial details about the product, store, or other relevant information.\n\n"
         "Evaluation Instructions:\n"
-        "- If the Revised Answer and the Original Answer are provided, evaluate the Revised Answer.\n"
-        "- If the Revised Answer is not provided, evaluate the Original Answer.\n\n"
+        "- If the Revised Answer and the Original Answer are not none, evaluate the Revised Answer and register the score and the justification for it.\n"
+        "- If the Revised Answer is none, evaluate the Original Answer and register the score and the justification for it.\n\n"
         "Evaluation Criteria:\n"
         "- The answer must be consistent with the information provided in the context and metadata.\n"
         "- It should not include information that cannot be inferred from the provided context.\n"
@@ -204,7 +203,6 @@ contextual_reviewer = AssistantAgent(
         "You must always call the function register_contextual_score with your contextual_score and a brief justification in English, do nothing else.\n\n"
     ),
     functions=[register_contextual_score],
-    max_consecutive_auto_reply=6,
 )
 
 suggester = AssistantAgent(
@@ -226,7 +224,6 @@ suggester = AssistantAgent(
         "You must always call the function register_suggestions with your suggestions as a parameter, do nothing else.\n"
     ),
     functions=[register_suggestions],
-    max_consecutive_auto_reply=3,
 )
 
 rewriter = AssistantAgent(
@@ -252,7 +249,6 @@ rewriter = AssistantAgent(
         "You must always call the function register_revised_answer with your revised answer as a parameter, do nothing else.\n\n"
     ),
     functions=[register_revised_answer],
-    max_consecutive_auto_reply=3,
 )
 
 decider = AssistantAgent(
@@ -275,7 +271,7 @@ decider = AssistantAgent(
         "- Do not accept answers that mention another product unless it is mentioned in the context or metadata, containing a link to it.\n"
         "- Do not accept answers that state any part of the question cannot be answered due to insufficient information.\n"
         "- Be particularly critical of answers that are vague, incomplete, or contain incorrect information.\n"
-        "- If the answer has already been revised 2 times or more and there hasn't been sufficient improvement, return 'DO_NOT_ANSWER'.\n\n"
+        "- If the number of revisions is 2 or more, the decision must be 'DO_NOT_ANSWER'.\n\n"
         "Possible Decisions:\n"
         "- **ANSWER_REVISED**: The revised answer is acceptable and fully addresses the question.\n"
         "- **REWRITE**: The revised answer is not good enough, but can be improved based on the given information.\n"
@@ -283,7 +279,6 @@ decider = AssistantAgent(
         "You must always call the function register_decision with your decision and a brief justification in English, do nothing else.\n\n"
     ),
     functions=[register_decision],
-    max_consecutive_auto_reply=5,
 )
 
 user_proxy = UserProxyAgent(
