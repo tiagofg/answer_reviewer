@@ -9,8 +9,9 @@ load_dotenv()
 
 config_list = [
     {
-        "model": "gpt-4o",
-        "api_key": os.getenv("OPENAI_API_KEY"),
+        "model": "qwen3:8b",
+        "base_url": "http://localhost:11434/v1",
+        "api_key": "ollama",
     }
 ]
 llm_config = {"config_list": config_list, "temperature": 0.0}
@@ -135,7 +136,6 @@ def register_decision(decision: str, justification: str, context_variables: Cont
         context_variables["revised_answer_justification_semantic"] = None
         context_variables["revised_answer_contextual_score"] = None
         context_variables["revised_answer_justification_contextual"] = None
-        context_variables["suggestions"] = None
         context_variables["new_score"] = None
 
         return ReplyResult(
@@ -171,6 +171,7 @@ semantic_reviewer = AssistantAgent(
         "- The answer must directly and explicitly address all aspects of the user's question.\n"
         "- It must be grammatically correct, free of spelling errors, and use appropriate language without mixing languages.\n"
         "- The answer should be concise and avoid unnecessary information.\n"
+        "- Greetings and signatures shouldn't be taken into account in the evaluation, unless they are duplicated.\n"
         "- Be particularly critical of answers that are vague, incomplete, or contain linguistic errors.\n\n"
         "Provide a semantic score from 0 to 5, where 5 indicates a perfect semantic match.\n"
         "You must always call the function register_semantic_score with your semantic_score and a brief justification in English, do nothing else.\n\n"
@@ -243,7 +244,7 @@ rewriter = AssistantAgent(
         "- The revised answer must directly and explicitly address all aspects of the user's question.\n"
         "- It must be consistent with the information provided in the context and metadata.\n"
         "- The answer should be grammatically correct, free of spelling errors, and use appropriate language without mixing languages.\n"
-        "- Retain any greetings or signatures present in the original answer.\n"
+        "- Retain any greetings or signatures present in the original answer, only removing duplicates, if any.\n"
         "- If there isn't enough information to provide a revised answer, return 'CANNOT REWRITE'.\n\n"
         "Provide the revised answer in the original language of the question.\n"
         "You must always call the function register_revised_answer with your revised answer as a parameter, do nothing else.\n\n"
@@ -271,7 +272,7 @@ decider = AssistantAgent(
         "- Do not accept answers that mention another product unless it is mentioned in the context or metadata, containing a link to it.\n"
         "- Do not accept answers that state any part of the question cannot be answered due to insufficient information.\n"
         "- Be particularly critical of answers that are vague, incomplete, or contain incorrect information.\n"
-        "- If the number of revisions is 2 or more, the decision must be 'DO_NOT_ANSWER'.\n\n"
+        "- If the number of revisions is 2 or more and the revised answer is still not good enough, the decision must be 'DO_NOT_ANSWER'.\n\n"
         "Possible Decisions:\n"
         "- **ANSWER_REVISED**: The revised answer is acceptable and fully addresses the question.\n"
         "- **REWRITE**: The revised answer is not good enough, but can be improved based on the given information.\n"
