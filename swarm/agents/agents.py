@@ -131,6 +131,12 @@ def register_decision(decision: str, justification: str, context_variables: Cont
             message="The decision is 'ANSWER_REVISED', terminating the process.",
         )
     elif decision == "REWRITE":
+        context_variables["original_answer"] = context_variables["revised_answer"]
+        context_variables["original_answer_semantic_score"] = context_variables["revised_answer_semantic_score"]
+        context_variables["original_answer_justification_semantic"] = context_variables["revised_answer_justification_semantic"]
+        context_variables["original_answer_contextual_score"] = context_variables["revised_answer_contextual_score"]
+        context_variables["original_answer_justification_contextual"] = context_variables["revised_answer_justification_contextual"]
+        context_variables["original_score"] = context_variables["new_score"]
         context_variables["revised_answer"] = None
         context_variables["revised_answer_semantic_score"] = None
         context_variables["revised_answer_justification_semantic"] = None

@@ -103,11 +103,6 @@ class RevisionService:
         new_score = new_score if new_score is not None else "-"
         final_answer = final_answer if final_answer != "DO_NOT_ANSWER" else "-"
 
-        # # Extract total cost, if available
-        # total_cost = chat_history.cost.get(
-        #     'usage_excluding_cached_inference', {}).get('total_cost')
-        # cost_str = f"${total_cost}" if total_cost is not None else "Cost information not available"
-
         # Salva os resultados
         new_record = {
             "Question": request.question,
