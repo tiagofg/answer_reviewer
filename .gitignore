@@ -178,6 +178,9 @@ cython_debug/
 
 # Test data
 data/
+tests/
+results-qwen3-32b/
+results-qwen3-30b/
 
 # Results files
 *.csv
