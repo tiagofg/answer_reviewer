@@ -94,7 +94,7 @@ class RevisionService:
         decision_justification = final_context.get("decision_justification")
         number_of_revisions = final_context.get("number_of_revisions")
 
-        if ((new_score is not None) and (new_score <= 7)) or (decision is "REWRITE"):
+        if ((new_score is not None) and (new_score <= 7)) or (decision is "REWRITE") or (decision is "DO_NOT_ANSWER"):
             final_answer = "DO_NOT_ANSWER"
 
         if (previous_score is not None) and (previous_score > 7):
