@@ -1,87 +1,99 @@
-# answer_reviewer
+# Answer Reviewer
 
-A set of FastAPI services that review and, when needed, rewrite answers to product questions in Portuguese or Spanish using multi‑agent LLM workflows. Each service variant exposes the same endpoints but uses a different orchestration strategy.
+An experimental comparison of three multi-agent approaches to reviewing and revising answers to product questions. Each approach is exposed through a small FastAPI application and evaluates Portuguese or Spanish answers against the supplied question, intent, category, context, and metadata.
 
-## Repository layout
-- `user_reviewer/`: Two‑agent loop where a reviewer scores the answer and a user proxy rewrites it until the score is good enough.
-- `group_chat/`: Reviewer → Rewriter → Evaluator agents coordinated by a group chat manager.
-- `swarm/`: Swarm/Autogen pattern with semantic reviewer, contextual reviewer, suggester, rewriter, and decider; captures richer scoring and decision data.
-- `tests/`: Sample data and a helper script (`jsonl_to_csvs.py`) for slicing JSONL datasets into JSON chunks.
-- `requirements.txt`: Python dependencies.
+The implementations share an API schema while differing in agent roles, orchestration, scoring, and return values. See [Approaches and implementation notes](docs/approaches.md) for a source-level comparison.
 
-## Request model (all services)
-`RevisionRequest` fields:
-- `id`: int
-- `question`: str
-- `answer`: str
-- `correct`: bool
-- `feedback`: str | null
-- `locale`: str (`pt` → Portuguese, anything else → Spanish)
-- `intent`: object (expects at least `name`, may include `confidence`)
-- `context`: object
-- `metadata`: array
-- `category`: str
+## Repository structure
 
-Example payload:
+| Path | Approach | Configured model |
+| --- | --- | --- |
+| [`user_reviewer/`](user_reviewer/) | Reviewer and automated user-proxy revision loop | OpenAI `gpt-4o` |
+| [`group_chat/`](group_chat/) | Round-robin reviewer, rewriter, and evaluator | OpenAI `gpt-4o` |
+| [`swarm/`](swarm/) | Routed semantic reviewer, contextual reviewer, suggester, rewriter, and decider | Ollama `qwen3:8b` |
+| [`requirements.txt`](requirements.txt) | Shared, pinned Python dependencies | — |
+
+## Setup
+
+Python 3.11 is a practical starting point for the pinned numerical dependencies. It is not a tested support matrix for this repository.
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+For `user_reviewer` and `group_chat`, set `OPENAI_API_KEY` in the environment or a root-level `.env` file.
+
+For `swarm`, run an Ollama-compatible API at `http://localhost:11434/v1` with the `qwen3:8b` model available. That endpoint and model are set directly in [`swarm/agents/agents.py`](swarm/agents/agents.py).
+
+## Run one approach
+
+Activate the root virtual environment first, then start an app from its own directory. The modules use top-level `models`, `services`, and `agents` imports, so the working directory matters.
+
+```bash
+(cd user_reviewer && python -m uvicorn main:app --reload --port 8000)
+(cd group_chat && python -m uvicorn main:app --reload --port 8001)
+(cd swarm && python -m uvicorn main:app --reload --port 8002)
+```
+
+Each command starts a separate service. FastAPI's interactive API documentation is available at `/docs` on the selected port.
+
+## API
+
+All three apps accept the same request object:
+
 ```json
 {
   "id": 1,
-  "question": "Qual o prazo de entrega?",
-  "answer": "Chega em até 5 dias úteis.",
+  "question": "Qual é o prazo de entrega?",
+  "answer": "A entrega leva cinco dias úteis.",
   "correct": false,
   "feedback": null,
   "locale": "pt",
-  "intent": { "name": "delivery_time", "confidence": 0.92 },
-  "context": { "shipping_time": "5 dias úteis" },
+  "intent": { "name": "delivery_time" },
+  "context": { "delivery_time": "5 dias úteis" },
   "metadata": [],
   "category": "shipping"
 }
 ```
 
-## Service variants
+`locale == "pt"` selects Portuguese; every other value is treated as Spanish. The services read the intent from `intent.name`.
 
-### `user_reviewer` (fast feedback loop)
-- Agents: `Reviewer` (scores 0–10 with per‑aspect tags) and `User` proxy (rewrites using the suggestions and stops when the score passes 7).
-- Response: `{"response": "<final_answer>"}`. If no rewrite was possible, the reviewer can return `"It is not possible to provide a revised answer."`.
-- Persistence: Writes `results.csv` with original/revised answers, scores, suggestions, intent, category, and cost (if the LLM reports it).
+### `POST /revise`
 
-### `group_chat` (reviewer → rewriter → evaluator)
-- Agents: `Reviewer` (scores 0–10 + suggestions), `Rewriter` (produces `<revised_answer>` or `THIS QUESTION CANNOT BE ANSWERED!!`), `Evaluator` (chooses final answer, emits `<new_score>`).
-- Response: `{"final_answer": "...", "previous_score": <int|null>, "new_score": <int|string>}`. Answers with low revised scores or flagged as unanswerable become `DO_NOT_ANSWER`.
-- Persistence: Appends to `results.csv` with both scores, suggestions, revised answer, and final decision.
+The `user_reviewer` app wraps its final string:
 
-### `swarm` (semantic + contextual + decision loop)
-- Agents: Semantic reviewer (0–5), Contextual reviewer (0–5), Suggester, Rewriter, Decider. Uses `autogen` swarm `DefaultPattern` with function calls to pass scores and state.
-- Decision rules: If the combined new score ≤ 7, or the decider returns `REWRITE`/`DO_NOT_ANSWER`, the final answer is `DO_NOT_ANSWER`; if the original score > 7, the original answer is retained.
-- Response: Same shape as `group_chat`.
-- Persistence: `results.csv` includes original/revised scores, suggestions, number of revisions, decision, and justification.
-
-## Running a service
-1) Install dependencies (Python 3.10+ recommended):
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+```json
+{ "response": "A entrega leva cinco dias úteis." }
 ```
 
-2) Configure LLM access:
-- `user_reviewer` and `group_chat` use OpenAI `gpt-4o`; set `OPENAI_API_KEY` in a `.env` or environment.
-- `swarm` is configured for a local Ollama endpoint (`qwen3:8b` at `http://localhost:11434/v1`); adjust `config_list` in `swarm/agents/agents.py` if needed.
+The `group_chat` and `swarm` apps return an object:
 
-3) Run one of the apps (each exposes `/revise` and `/revise-questions`):
-```bash
-# User-driven reviewer/rewriter
-uvicorn user_reviewer.main:app --reload --port 8000
-
-# Group chat reviewer → rewriter → evaluator
-uvicorn group_chat.main:app --reload --port 8001
-
-# Swarm-based multi-agent pipeline
-uvicorn swarm.main:app --reload --port 8002
+```json
+{
+  "final_answer": "A entrega leva cinco dias úteis.",
+  "previous_score": 8,
+  "new_score": "-"
+}
 ```
 
-## API usage
-- `POST /revise`: single `RevisionRequest`. Returns the final answer (and scores for `group_chat`/`swarm`).
-- `POST /revise-questions`: array of `RevisionRequest` objects. Returns a list of per-item responses.
+Scores may be `null` when parsing or registration does not produce one. A string `"-"` is used for a missing new score; `group_chat` and `swarm` also return `"-"` as `final_answer` when their internal decision is `DO_NOT_ANSWER`.
 
-All services append a row to `results.csv` in the working directory after each request.
+### `POST /revise-questions`
+
+Send an array of request objects. Every implementation returns an outer object with a `responses` array:
+
+```json
+{ "responses": [] }
+```
+
+For `user_reviewer`, each item in `responses` is a string. For `group_chat` and `swarm`, each item is an object with `final_answer`, `previous_score`, and `new_score`.
+
+## Operational notes
+
+Each request appends a row to `results.csv` in the app's working directory. The services do not isolate concurrent CSV writes. Their agent objects are also created at module import time and reused between requests; `group_chat` reads the shared manager's chat history, and `swarm` clears and repopulates one module-level context object. Concurrent calls, and potentially accumulated group-chat history, can therefore interfere with result extraction.
+
+The swarm decision checks use Python identity comparisons for some string values (`is` rather than equality). Their behavior is therefore implementation-dependent and may not match the intended decision text consistently.
+
+This repository contains no automated tests, CI configuration, bundled evaluation dataset, authentication, or deployment configuration. Treat it as experimental code for inspecting and comparing orchestration approaches.
